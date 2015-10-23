@@ -110,11 +110,11 @@ IOReturn PcmMsrClientClassName::checkActiveAndOpened (const char* memberFunction
 {
     if (fProvider == NULL || isInactive()) {
         IOLog("%s::%s returned kIOReturnNotAttached.\n", getName(), memberFunction);
-        return kIOReturnNotAttached;
+        return (IOReturn)kIOReturnNotAttached;
         
     } else if (!fProvider->isOpen(this)) {
         IOLog("%s::%s returned kIOReturnNotOpen.\n", getName(), memberFunction);
-        return  kIOReturnNotOpen;
+        return  (IOReturn)kIOReturnNotOpen;
     }
     return kIOReturnSuccess;
 }
@@ -169,7 +169,7 @@ IOReturn PcmMsrClientClassName::sBuildTopology(PcmMsrClientClassName* target, vo
 
 IOReturn PcmMsrClientClassName::buildTopology(topologyEntry* data, size_t output_size)
 {
-    uint32_t num_cores = output_size / sizeof(topologyEntry);
+    uint32_t num_cores = (uint32_t) (output_size / sizeof(topologyEntry) );
     IOReturn	result = checkActiveAndOpened (__FUNCTION__);
     
     if (result == kIOReturnSuccess)

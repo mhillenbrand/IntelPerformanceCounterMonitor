@@ -45,7 +45,7 @@ unsigned int WinPmem::read32(__int64 start)
   DWORD bytes_read = 0;
   large_start.QuadPart = start;
 
-  if(0xFFFFFFFF == SetFilePointer(fd_, large_start.LowPart,
+  if(0xFFFFFFFF == SetFilePointer(fd_, (LONG)large_start.LowPart,
                                     &large_start.HighPart, FILE_BEGIN))
   {
       LogError(TEXT("Failed to seek in the pmem device.\n"));
@@ -54,7 +54,7 @@ unsigned int WinPmem::read32(__int64 start)
 
   unsigned int result = 0;
 
-  if(!ReadFile(fd_, &result, sizeof(unsigned int), &bytes_read, NULL))
+  if(!ReadFile(fd_, &result, (DWORD)sizeof(unsigned int), &bytes_read, NULL))
   {
       LogError(TEXT("Failed to Read memory."));
       goto error;
@@ -79,12 +79,10 @@ int WinPmem::set_acquisition_mode(__int32 mode) {
 };
 
 WinPmem::WinPmem():
-  fd_(INVALID_HANDLE_VALUE),
-  buffer_size_(1024*1024),
-  buffer_(NULL),
   suppress_output(FALSE),
+  fd_(INVALID_HANDLE_VALUE),
+  out_fd_(INVALID_HANDLE_VALUE),
   service_name(PMEM_SERVICE_NAME) {
-  buffer_ = new char[buffer_size_];
   _tcscpy_s(last_error, TEXT(""));
   max_physical_memory_ = 0;
   }
@@ -92,10 +90,6 @@ WinPmem::WinPmem():
 WinPmem::~WinPmem() {
   if (fd_ != INVALID_HANDLE_VALUE) {
     CloseHandle(fd_);
-  };
-
-  if (buffer_) {
-    delete [] buffer_;
   }
 }
 
@@ -174,9 +168,9 @@ int WinPmem::install_driver(bool delete_driver) {
   if(fd_ == INVALID_HANDLE_VALUE) {
     LogError(TEXT("Can not open raw device."));
     status = -1;
-  };
-
-  status = 1;
+  }
+  else
+    status = 1;
 
  service_error:
   CloseServiceHandle(service);
@@ -206,8 +200,5 @@ int WinPmem::uninstall_driver() {
   Log(TEXT("Driver Unloaded.\n"));
 
   return 1;
-
-  CloseServiceHandle(scm);
-  return 0;
 }
 

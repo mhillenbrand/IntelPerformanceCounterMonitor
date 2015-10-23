@@ -21,9 +21,6 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
         \brief Internal type and constant definitions
 */
 
-// compile for Windows 7 or Windows Server 2008 R2 (processor group support needed for systems with high core count)
-#define COMPILE_FOR_WINDOWS_7
-
 #undef PCM_DEBUG
 
 #include <iostream>
@@ -101,6 +98,20 @@ typedef signed int int32;
 
 #define MEM_LOAD_UOPS_RETIRED_L2_HIT_EVTNR (0xD1)
 #define MEM_LOAD_UOPS_RETIRED_L2_HIT_UMASK (0x02)
+
+// Skylake on-core events
+
+#define SKL_MEM_LOAD_RETIRED_L3_MISS_EVTNR (0xD1)
+#define SKL_MEM_LOAD_RETIRED_L3_MISS_UMASK (0x20)
+
+#define SKL_MEM_LOAD_RETIRED_L3_HIT_EVTNR (0xD1)
+#define SKL_MEM_LOAD_RETIRED_L3_HIT_UMASK (0x04)
+
+#define SKL_MEM_LOAD_RETIRED_L2_MISS_EVTNR (0xD1)
+#define SKL_MEM_LOAD_RETIRED_L2_MISS_UMASK (0x10)
+
+#define SKL_MEM_LOAD_RETIRED_L2_HIT_EVTNR (0xD1)
+#define SKL_MEM_LOAD_RETIRED_L2_HIT_UMASK (0x02)
 
 // architectural on-core events
 

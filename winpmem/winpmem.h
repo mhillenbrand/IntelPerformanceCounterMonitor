@@ -37,8 +37,6 @@ class WinPmem {
   // The file handle to the image file.
   HANDLE out_fd_;
   TCHAR *service_name;
-  char *buffer_;
-  size_t buffer_size_;
   TCHAR driver_filename[MAX_PATH];
 
   // This is the maximum size of memory calculated.

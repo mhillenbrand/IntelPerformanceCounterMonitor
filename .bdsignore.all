@@ -8,6 +8,8 @@ ChangeLog
 TODO
 Debug
 Release
+Release64
+Backup
 Intel_SSA
 My Inspector XE Results - pcm
 .gitignore
@@ -22,3 +24,9 @@ My Inspector XE Results - pcm
 .*\.htm
 .*\.bat
 .*\.strings
+.*\.sln
+.*\.suo
+.*\.sdf
+.*\.vcxproj
+.*\.vcxproj.user
+.*\.vcxproj.filters

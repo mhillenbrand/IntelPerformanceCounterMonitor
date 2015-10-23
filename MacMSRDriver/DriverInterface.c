@@ -109,7 +109,7 @@ kern_return_t getNumClients(io_connect_t connect, uint32_t* num_insts)
 #if !defined(__LP64__)
 	if (IOConnectCallStructMethod != NULL) {
 #endif
-        uint32_t num_outputs = 1;
+        size_t num_outputs = 1;
         uint64_t knum_insts;
 		kernResult = IOConnectCallStructMethod(connect,	kGetNumInstances, NULL, 0, &knum_insts, &num_outputs);
         *num_insts = (uint32_t)knum_insts;
@@ -128,7 +128,7 @@ kern_return_t incrementNumClients(io_connect_t connect, uint32_t* num_insts)
 #if !defined(__LP64__)
 	if (IOConnectCallStructMethod != NULL) {
 #endif
-        uint32_t num_outputs = 1;
+        size_t num_outputs = 1;
         uint64_t knum_insts;
 		kernResult = IOConnectCallStructMethod(connect,	kIncrementNumInstances, NULL, 0, &knum_insts, &num_outputs);
         *num_insts = (uint32_t)knum_insts;
@@ -148,7 +148,7 @@ kern_return_t decrementNumClients(io_connect_t connect, uint32_t* num_insts)
 #if !defined(__LP64__)
 	if (IOConnectCallStructMethod != NULL) {
 #endif
-        uint32_t num_outputs = 1;
+        size_t num_outputs = 1;
         uint64_t knum_insts;
 		kernResult = IOConnectCallStructMethod(connect,	kDecrementNumInstances, NULL, 0, &knum_insts, &num_outputs);
         *num_insts = (uint32_t)knum_insts;

@@ -30,6 +30,9 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 #include <unistd.h> 
 #endif
 
+#include "mutex.h"
+#include <memory>
+
 #define PCM_CLIENT_IMC_BAR_OFFSET       (0x0048)
 #define PCM_CLIENT_IMC_DRAM_IO_REQESTS  (0x5048)
 #define PCM_CLIENT_IMC_DRAM_DATA_READS  (0x5050)
@@ -47,9 +50,9 @@ class ClientBW
     char * mmapAddr;
 #endif
 #ifdef _MSC_VER
-	WinPmem * pmem;
+	std::shared_ptr<WinPmem> pmem;
     uint64 startAddr;
-    HANDLE Mutex;
+    PCM_Util::Mutex mutex;
 #endif
 
 public:

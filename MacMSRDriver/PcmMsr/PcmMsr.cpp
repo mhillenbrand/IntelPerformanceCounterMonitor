@@ -110,9 +110,9 @@ uint32_t PcmMsrDriverClassName::getNumCores()
                 if(sizeof(int) == size)
                     ret = *(int*)pParam;
                 else if(sizeof(long) == size)
-                    ret = *(long*)pParam;
+                    ret = (uint32_t) *(long*)pParam;
                 else if(sizeof(long long) == size)
-                    ret = *(long long*)pParam;
+                    ret = (uint32_t) *(long long*)pParam;
                 else
                     ret = *(int*)pParam;
             }

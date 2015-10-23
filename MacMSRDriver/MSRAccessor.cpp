@@ -29,7 +29,7 @@ int32_t MSRAccessor::buildTopology(uint32_t num_cores ,void* pTopos){
 int32_t MSRAccessor::read(uint32_t core_num, uint64_t msr_num, uint64_t * value){
     pcm_msr_data_t idatas, odatas;
     size_t size = sizeof(pcm_msr_data_t);
-    idatas.msr_num = msr_num;
+    idatas.msr_num = (uint32_t)msr_num;
     idatas.cpu_num = core_num;
     kern_return_t ret = readMSR(connect, &idatas, &size, &odatas, &size);
     if(ret == KERN_SUCCESS)
@@ -46,7 +46,7 @@ int32_t MSRAccessor::write(uint32_t core_num, uint64_t msr_num, uint64_t value){
     pcm_msr_data_t idatas;
     size_t size = sizeof(pcm_msr_data_t);
     idatas.value = value;
-    idatas.msr_num = msr_num;
+    idatas.msr_num = (uint32_t)msr_num;
     idatas.cpu_num = core_num;
     kern_return_t ret = writeMSR(connect, &idatas, &size);
     if(ret == KERN_SUCCESS)

@@ -8,7 +8,7 @@ kext:
 	xcodebuild -configuration Release -target PcmMsrDriver clean build
 
 library:
-	xcodebuild -configuration Release -target PcmMsrLibrary clean build 
+	xcodebuild -configuration Release -target PcmMsrLibrary clean build
 
 install: kext library
 	sudo sh ./kextload.sh

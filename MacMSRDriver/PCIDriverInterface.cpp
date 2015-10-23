@@ -14,7 +14,7 @@
 //
 
 #include <stdio.h>
-#include <map.h>
+#include <map>
 #include "PCIDriverInterface.h"
 #include <IOKit/IOKitLib.h>
 #include "PcmMsr/UserKernelShared.h"

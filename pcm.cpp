@@ -126,8 +126,8 @@ void print_output(PCM * m,
         cout << " L2MISS: L2 cache misses (including other core's L2 cache *hits*) " << "\n";
     if (cpu_model != PCM::ATOM) cout << " L3HIT : L3 cache hit ratio (0.00-1.00)" << "\n";
     cout << " L2HIT : L2 cache hit ratio (0.00-1.00)" << "\n";
-    if (cpu_model != PCM::ATOM) cout << " L3CLK : ratio of CPU cycles lost due to L3 cache misses (0.00-1.00), in some cases could be >1.0 due to a higher memory latency" << "\n";
-    if (cpu_model != PCM::ATOM) cout << " L2CLK : ratio of CPU cycles lost due to missing L2 cache but still hitting L3 cache (0.00-1.00)" << "\n";
+    if (cpu_model != PCM::ATOM) cout << " L3MPI : number of L3 cache misses per instruction\n";
+    if (cpu_model != PCM::ATOM) cout << " L2MPI : number of L2 cache misses per instruction\n";
     if (cpu_model != PCM::ATOM) cout << " READ  : bytes read from memory controller (in GBytes)" << "\n";
     if (cpu_model != PCM::ATOM) cout << " WRITE : bytes written to memory controller (in GBytes)" << "\n";
     if (m->memoryIOTrafficMetricAvailable()) cout << " IO    : bytes read/written due to IO requests to memory controller (in GBytes); this may be an over estimate due to same-cache-line partial requests" << "\n";
@@ -141,7 +141,7 @@ void print_output(PCM * m,
         cout << " Core (SKT) | EXEC | IPC  | FREQ | L2MISS | L2HIT | TEMP" << "\n" << "\n";
     else
     {
-			cout << " Core (SKT) | EXEC | IPC  | FREQ  | AFREQ | L3MISS | L2MISS | L3HIT | L2HIT | L3CLK | L2CLK |";
+			cout << " Core (SKT) | EXEC | IPC  | FREQ  | AFREQ | L3MISS | L2MISS | L3HIT | L2HIT | L3MPI | L2MPI |";
 
 			if (m->L3CacheOccupancyMetricAvailable())
 					cout << "  L3OCC | READ | WRITE |";
@@ -174,8 +174,8 @@ void print_output(PCM * m,
                     "   " << unit_format(getL2CacheMisses(cstates1[i], cstates2[i])) <<
                     "    " << getL3CacheHitRatio(cstates1[i], cstates2[i]) <<
                     "    " << getL2CacheHitRatio(cstates1[i], cstates2[i]) <<
-                    "    " << getCyclesLostDueL3CacheMisses(cstates1[i], cstates2[i]) <<
-                    "    " << getCyclesLostDueL2CacheMisses(cstates1[i], cstates2[i]) ;
+                    "    " << double(getL3CacheMisses(cstates1[i], cstates2[i])) / getInstructionsRetired(cstates1[i], cstates2[i]) <<
+                    "    " << double(getL2CacheMisses(cstates1[i], cstates2[i])) / getInstructionsRetired(cstates1[i], cstates2[i]) ;
                 if (m->L3CacheOccupancyMetricAvailable())
                     cout << "   " << setw(6) << l3cache_occ_format(getL3CacheOccupancy(cstates2[i])) ;
                 if (m->memoryIOTrafficMetricAvailable())
@@ -212,8 +212,8 @@ void print_output(PCM * m,
                     "   " << unit_format(getL2CacheMisses(sktstate1[i], sktstate2[i])) <<
                     "    " << getL3CacheHitRatio(sktstate1[i], sktstate2[i]) <<
                     "    " << getL2CacheHitRatio(sktstate1[i], sktstate2[i]) <<
-                    "    " << getCyclesLostDueL3CacheMisses(sktstate1[i], sktstate2[i]) <<
-                    "    " << getCyclesLostDueL2CacheMisses(sktstate1[i], sktstate2[i]);
+                    "    " << double(getL3CacheMisses(sktstate1[i], sktstate2[i])) / getInstructionsRetired(sktstate1[i], sktstate2[i]) <<
+                    "    " << double(getL2CacheMisses(sktstate1[i], sktstate2[i])) / getInstructionsRetired(sktstate1[i], sktstate2[i]);
                 if (m->L3CacheOccupancyMetricAvailable())
                     cout << "    " << setw(6) << l3cache_occ_format(getL3CacheOccupancy(sktstate2[i])) ;
                 if (m->memoryTrafficMetricsAvailable())
@@ -243,8 +243,8 @@ void print_output(PCM * m,
                 "   " << unit_format(getL2CacheMisses(sstate1, sstate2)) <<
                 "    " << getL3CacheHitRatio(sstate1, sstate2) <<
                 "    " << getL2CacheHitRatio(sstate1, sstate2) <<
-                "    " << getCyclesLostDueL3CacheMisses(sstate1, sstate2) <<
-                "    " << getCyclesLostDueL2CacheMisses(sstate1, sstate2) ;
+                "    " << double(getL3CacheMisses(sstate1, sstate2)) / getInstructionsRetired(sstate1, sstate2) <<
+                "    " << double(getL2CacheMisses(sstate1, sstate2)) / getInstructionsRetired(sstate1, sstate2);
             if (m->L3CacheOccupancyMetricAvailable())
                 cout << "    " << " N/A ";
             if (m->memoryTrafficMetricsAvailable())
@@ -376,27 +376,42 @@ void print_output(PCM * m,
     }
     if (show_socket_output)
     {
-        if (m->packageEnergyMetricsAvailable())
+        cout << "\n";
+        cout << "          package/CPU energy (Joules)  DIMM energy (Joules)\n";
+        cout << "----------------------------------------------------------------------------------------------" << "\n";
+        for (uint32 i = 0; i < m->getNumSockets(); ++i)
         {
-            cout << "\n";
-            cout << "----------------------------------------------------------------------------------------------" << "\n";
-            for (uint32 i = 0; i < m->getNumSockets(); ++i)
-            {
-                cout << " SKT   " << setw(2) << i << " package consumed " << getConsumedJoules(sktstate1[i], sktstate2[i]) << " Joules\n";
-            }
-            cout << "----------------------------------------------------------------------------------------------" << "\n";
-            cout << " TOTAL:                    " << getConsumedJoules(sstate1, sstate2) << " Joules\n";
+                cout << " SKT   " << setw(2) << i << "        ";
+                if(m->packageEnergyMetricsAvailable()) {
+                  cout << setw(10) << getConsumedJoules(sktstate1[i], sktstate2[i]);
+                } else {
+                  cout << "    N/A   ";
+                }
+                cout << "               ";
+                if(m->dramEnergyMetricsAvailable()) {
+                  cout << setw(10) << getDRAMConsumedJoules(sktstate1[i], sktstate2[i]);
+                } else {
+                  cout << "    N/A   ";
+                }
+                cout << "\n";
         }
-        if (m->dramEnergyMetricsAvailable())
-        {
-            cout << "\n";
-            cout << "----------------------------------------------------------------------------------------------" << "\n";
-            for (uint32 i = 0; i < m->getNumSockets(); ++i)
-            {
-                cout << " SKT   " << setw(2) << i << " DIMMs consumed " << getDRAMConsumedJoules(sktstate1[i], sktstate2[i]) << " Joules\n";
+        cout << "----------------------------------------------------------------------------------------------" << "\n";
+        if (m->getNumSockets() > 1) {
+            cout << "  *              ";
+            if (m->packageEnergyMetricsAvailable()) {
+                cout << setw(10) << getConsumedJoules(sstate1, sstate2);
             }
-            cout << "----------------------------------------------------------------------------------------------" << "\n";
-            cout << " TOTAL:                  " << getDRAMConsumedJoules(sstate1, sstate2) << " Joules\n";
+            else {
+                cout << "    N/A   ";
+            }
+            cout << "               ";
+            if (m->dramEnergyMetricsAvailable()) {
+                cout << setw(10) << getDRAMConsumedJoules(sstate1, sstate2);
+            }
+            else {
+                cout << "    N/A   ";
+            }
+            cout << "\n";
         }
     }
 
@@ -541,9 +556,9 @@ void print_csv_header(PCM * m,
         if (cpu_model != PCM::ATOM)
         {
             	if (m->L3CacheOccupancyMetricAvailable())
-            		cout << "EXEC;IPC;FREQ;AFREQ;L3MISS;L2MISS;L3HIT;L2HIT;L3CLK;L2CLK;L3OCC;READ;WRITE;";
+                    cout << "EXEC;IPC;FREQ;AFREQ;L3MISS;L2MISS;L3HIT;L2HIT;L3MPI;L2MPI;L3OCC;READ;WRITE;";
             	else
-            		cout << "EXEC;IPC;FREQ;AFREQ;L3MISS;L2MISS;L3HIT;L2HIT;L3CLK;L2CLK;READ;WRITE;";
+                    cout << "EXEC;IPC;FREQ;AFREQ;L3MISS;L2MISS;L3HIT;L2HIT;L3MPI;L2MPI;READ;WRITE;";
         }
         else
         {
@@ -581,9 +596,9 @@ void print_csv_header(PCM * m,
 				else
 				{
 					if (m->L3CacheOccupancyMetricAvailable())
-						cout << "EXEC;IPC;FREQ;AFREQ;L3MISS;L2MISS;L3HIT;L2HIT;L3CLK;L2CLK;L3OCC;READ;WRITE;TEMP;";
+						cout << "EXEC;IPC;FREQ;AFREQ;L3MISS;L2MISS;L3HIT;L2HIT;L3MPI;L2MPI;L3OCC;READ;WRITE;TEMP;";
 					else
-						cout << "EXEC;IPC;FREQ;AFREQ;L3MISS;L2MISS;L3HIT;L2HIT;L3CLK;L2CLK;READ;WRITE;TEMP;";
+						cout << "EXEC;IPC;FREQ;AFREQ;L3MISS;L2MISS;L3HIT;L2HIT;L3MPI;L2MPI;READ;WRITE;TEMP;";
 				}
             }
 
@@ -650,9 +665,9 @@ void print_csv_header(PCM * m,
             else
 				{
 					if (m->L3CacheOccupancyMetricAvailable())
-						cout << "EXEC;IPC;FREQ;AFREQ;L3MISS;L2MISS;L3HIT;L2HIT;L3CLK;L2CLK;L3OCC;";
+                        cout << "EXEC;IPC;FREQ;AFREQ;L3MISS;L2MISS;L3HIT;L2HIT;L3MPI;L2MPI;L3OCC;";
 					else
-						cout << "EXEC;IPC;FREQ;AFREQ;L3MISS;L2MISS;L3HIT;L2HIT;L3CLK;L2CLK;";
+                        cout << "EXEC;IPC;FREQ;AFREQ;L3MISS;L2MISS;L3HIT;L2HIT;L3MPI;L2MPI;";
 				}
 
 
@@ -711,10 +726,10 @@ void print_csv(PCM * m,
                 ';' << float_format(getL2CacheMisses(sstate1, sstate2)) <<
                 ';' << getL3CacheHitRatio(sstate1, sstate2) <<
                 ';' << getL2CacheHitRatio(sstate1, sstate2) <<
-                ';' << getCyclesLostDueL3CacheMisses(sstate1, sstate2) <<
-                ';' << getCyclesLostDueL2CacheMisses(sstate1, sstate2) << ";";
-                if (m->L3CacheOccupancyMetricAvailable())
-                	cout << "N/A;";
+                ';' << double(getL3CacheMisses(sstate1, sstate2)) / getInstructionsRetired(sstate1, sstate2) <<
+                ';' << double(getL2CacheMisses(sstate1, sstate2)) / getInstructionsRetired(sstate1, sstate2) << ";";
+            if (m->L3CacheOccupancyMetricAvailable())
+                cout << "N/A;";
             if (!(m->memoryTrafficMetricsAvailable()))
                 cout << "N/A;N/A;";
             else
@@ -758,7 +773,6 @@ void print_csv(PCM * m,
 
     }
 
-
     if (show_socket_output)
     {
         {
@@ -779,9 +793,9 @@ void print_csv(PCM * m,
                     ';' << float_format(getL2CacheMisses(sktstate1[i], sktstate2[i])) <<
                     ';' << getL3CacheHitRatio(sktstate1[i], sktstate2[i]) <<
                     ';' << getL2CacheHitRatio(sktstate1[i], sktstate2[i]) <<
-                    ';' << getCyclesLostDueL3CacheMisses(sktstate1[i], sktstate2[i]) <<
-                    ';' << getCyclesLostDueL2CacheMisses(sktstate1[i], sktstate2[i]);
-         	if (m->L3CacheOccupancyMetricAvailable())
+                    ';' << double(getL3CacheMisses(sktstate1[i], sktstate2[i])) / getInstructionsRetired(sktstate1[i], sktstate2[i]) <<
+                    ';' << double(getL2CacheMisses(sktstate1[i], sktstate2[i])) / getInstructionsRetired(sktstate1[i], sktstate2[i]) ;
+                if (m->L3CacheOccupancyMetricAvailable())
                     cout << ';' << l3cache_occ_format(getL3CacheOccupancy(sktstate2[i]));
                 if (!(m->memoryTrafficMetricsAvailable()))
                     cout << ";N/A;N/A";
@@ -859,10 +873,11 @@ void print_csv(PCM * m,
                     ';' << float_format(getL2CacheMisses(cstates1[i], cstates2[i])) <<
                     ';' << getL3CacheHitRatio(cstates1[i], cstates2[i]) <<
                     ';' << getL2CacheHitRatio(cstates1[i], cstates2[i]) <<
-                    ';' << getCyclesLostDueL3CacheMisses(cstates1[i], cstates2[i]) <<
-                    ';' << getCyclesLostDueL2CacheMisses(cstates1[i], cstates2[i]) ;
+                    ';' << double(getL3CacheMisses(cstates1[i], cstates2[i])) / getInstructionsRetired(cstates1[i], cstates2[i]) <<
+                    ';' << double(getL2CacheMisses(cstates1[i], cstates2[i])) / getInstructionsRetired(cstates1[i], cstates2[i]);
                     if (m->L3CacheOccupancyMetricAvailable())
                         cout << ';' << l3cache_occ_format(getL3CacheOccupancy(cstates2[i])) ;
+                    cout << ';';
                 }
             else
                 cout << getExecUsage(cstates1[i], cstates2[i]) <<
@@ -896,7 +911,7 @@ int main(int argc, char * argv[])
     cerr << endl;
     cerr << " Intel(r) Performance Counter Monitor " << INTEL_PCM_VERSION << endl;
     cerr << endl;
-    cerr << " Copyright (c) 2009-2014 Intel Corporation" << endl;
+    cerr << INTEL_PCM_COPYRIGHT << endl;
     cerr << endl;
 
     // if delay is not specified: use either default (1 second),
@@ -1124,7 +1139,7 @@ int main(int argc, char * argv[])
     m->getAllCounterStates(sstate1, sktstate1, cstates1);
 
     if (sysCmd != NULL) {
-        MySystem(sysCmd, sysArgv);
+        MySystem(sysCmd, sysArgv); delay = 0;
     }
 
     unsigned int i = 1;
@@ -1177,8 +1192,14 @@ int main(int argc, char * argv[])
         else
         {
             assert(getNumberOfCustomEvents(0, sstate1, sstate2) == getL3CacheMisses(sstate1, sstate2));
-            assert(getNumberOfCustomEvents(1, sstate1, sstate2) == getL3CacheHitsNoSnoop(sstate1, sstate2));
-            assert(getNumberOfCustomEvents(2, sstate1, sstate2) == getL3CacheHitsSnoop(sstate1, sstate2));
+            if (m->useSkylakeEvents()) {
+                assert(getNumberOfCustomEvents(1, sstate1, sstate2) == getL3CacheHits(sstate1, sstate2));
+                assert(getNumberOfCustomEvents(2, sstate1, sstate2) == getL2CacheMisses(sstate1, sstate2));
+            }
+            else {
+                assert(getNumberOfCustomEvents(1, sstate1, sstate2) == getL3CacheHitsNoSnoop(sstate1, sstate2));
+                assert(getNumberOfCustomEvents(2, sstate1, sstate2) == getL3CacheHitsSnoop(sstate1, sstate2));
+            }
             assert(getNumberOfCustomEvents(3, sstate1, sstate2) == getL2CacheHits(sstate1, sstate2));
         }
 

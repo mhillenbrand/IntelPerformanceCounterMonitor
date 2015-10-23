@@ -30,6 +30,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
     The driver is required to access hardware Model Specific Registers (MSRs)
     under Windows. Currently only 64-bit Windows 7 has been tested.
 */
+
 class Driver
 {
     SC_HANDLE hSCManager;
@@ -49,12 +50,12 @@ public:
         hSCManager = OpenSCManager(NULL, NULL, SC_MANAGER_CREATE_SERVICE);
         if (hSCManager)
         {
-            hService = CreateService(hSCManager, L"Test MSR 4", L"Test MSR Driver 4", SERVICE_START | DELETE | SERVICE_STOP,
+            hService = CreateService(hSCManager, L"PCM Test MSR", L"PCM Test MSR Driver", SERVICE_START | DELETE | SERVICE_STOP,
                                      SERVICE_KERNEL_DRIVER, SERVICE_DEMAND_START, SERVICE_ERROR_IGNORE, driverPath, NULL, NULL, NULL, NULL, NULL);
 
             if (!hService)
             {
-                hService = OpenService(hSCManager, L"Test MSR 4", SERVICE_START | DELETE | SERVICE_STOP);
+                hService = OpenService(hSCManager, L"PCM Test MSR", SERVICE_START | DELETE | SERVICE_STOP);
             }
 
             if (hService)
@@ -66,8 +67,10 @@ public:
                 DWORD err = GetLastError();
                 if (err == ERROR_SERVICE_ALREADY_RUNNING) return true;
 
-                _com_error error(err);
-                std::wcerr << "Starting MSR service failed with error " << err << " " << error.ErrorMessage() << std::endl;
+                std::wcerr << "Starting MSR service failed with error " << err << " ";
+                const TCHAR * errorStr = _com_error(err).ErrorMessage();
+                if (errorStr) std::wcerr << errorStr;
+                std::wcerr << std::endl;
 
                 ControlService(hService, SERVICE_CONTROL_STOP, &ss);
 
@@ -77,16 +80,20 @@ public:
             }
             else
             {
-                _com_error error(GetLastError());
-                std::wcerr << "Opening service manager failed with error " << GetLastError() << " " << error.ErrorMessage() << std::endl;
+                std::wcerr << "Opening service manager failed with error " << GetLastError() << " ";
+                const TCHAR * errorStr = _com_error(GetLastError()).ErrorMessage();
+                if (errorStr) std::wcerr << errorStr;
+                std::wcerr << std::endl;
             }
 
             CloseServiceHandle(hSCManager);
         }
         else
         {
-            _com_error error(GetLastError());
-            std::wcerr << "Opening service manager failed with error " << GetLastError() << " " << error.ErrorMessage() << std::endl;
+            std::wcerr << "Opening service manager failed with error " << GetLastError() << " ";
+            const TCHAR * errorStr = _com_error(GetLastError()).ErrorMessage();
+            if (errorStr) std::wcerr << errorStr;
+            std::wcerr << std::endl;
         }
 
 
@@ -110,8 +117,7 @@ public:
         hSCManager = OpenSCManager(NULL, NULL, SC_MANAGER_CREATE_SERVICE);
         if (hSCManager)
         {
-            hService = OpenService(hSCManager, L"Test MSR 4", SERVICE_START | DELETE | SERVICE_STOP);
-            DWORD res = 0;
+            hService = OpenService(hSCManager, L"PCM Test MSR", SERVICE_START | DELETE | SERVICE_STOP);
             if (hService)
             {
                 ControlService(hService, SERVICE_CONTROL_STOP, &ss);
@@ -122,8 +128,10 @@ public:
         }
         else
         {
-            _com_error error(GetLastError());
-            std::wcerr << "Opening service manager failed with error " << GetLastError() << " " << error.ErrorMessage() << std::endl;
+            std::wcerr << "Opening service manager failed with error " << GetLastError() << " ";
+            const TCHAR * errorStr = _com_error(GetLastError()).ErrorMessage();
+            if (errorStr) std::wcerr << errorStr;
+            std::wcerr << std::endl;
         }
     }
 
@@ -136,8 +144,7 @@ public:
         hSCManager = OpenSCManager(NULL, NULL, SC_MANAGER_CREATE_SERVICE);
         if (hSCManager)
         {
-            hService = OpenService(hSCManager, L"Test MSR 4", SERVICE_START | DELETE | SERVICE_STOP);
-            DWORD res = 0;
+            hService = OpenService(hSCManager, L"PCM Test MSR", SERVICE_START | DELETE | SERVICE_STOP);
             if (hService)
             {
                 ControlService(hService, SERVICE_CONTROL_STOP, &ss);
@@ -149,8 +156,10 @@ public:
         }
         else
         {
-            _com_error error(GetLastError());
-            std::wcerr << "Opening service manager failed with error " << GetLastError() << " " << error.ErrorMessage() << std::endl;
+            std::wcerr << "Opening service manager failed with error " << GetLastError() << " ";
+            const TCHAR * errorStr = _com_error(GetLastError()).ErrorMessage();
+            if (errorStr) std::wcerr << errorStr;
+            std::wcerr << std::endl;
         }
     }
 };

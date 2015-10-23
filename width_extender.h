@@ -29,6 +29,8 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 #include <stdlib.h>
 #include "cpucounters.h"
 #include "client_bw.h"
+#include "mutex.h"
+#include <memory>
 
 #ifdef _MSC_VER
 DWORD WINAPI WatchDogProc(LPVOID state);
@@ -47,9 +49,9 @@ public:
 
    struct MsrHandleCounter : public AbstractRawCounter
    {
-      SafeMsrHandle * msr;
+      std::shared_ptr<SafeMsrHandle>  msr;
       uint64 msr_addr;
-      MsrHandleCounter(SafeMsrHandle * msr_, uint64 msr_addr_): msr(msr_), msr_addr(msr_addr_) {}
+      MsrHandleCounter(std::shared_ptr<SafeMsrHandle> msr_, uint64 msr_addr_) : msr(msr_), msr_addr(msr_addr_) {}
       uint64 operator() ()
       {
          uint64 value = 0;
@@ -60,34 +62,64 @@ public:
 
    struct ClientImcReadsCounter : public AbstractRawCounter
    {
-      ClientBW * clientBW;
-      ClientImcReadsCounter(ClientBW * clientBW_): clientBW(clientBW_) {}
+      std::shared_ptr<ClientBW> clientBW;
+      ClientImcReadsCounter(std::shared_ptr<ClientBW>  clientBW_) : clientBW(clientBW_) {}
       uint64 operator() () { return clientBW->getImcReads(); }
    };
 
    struct ClientImcWritesCounter : public AbstractRawCounter
    {
-      ClientBW * clientBW;
-      ClientImcWritesCounter(ClientBW * clientBW_): clientBW(clientBW_) {}
+      std::shared_ptr<ClientBW> clientBW;
+      ClientImcWritesCounter(std::shared_ptr<ClientBW> clientBW_) : clientBW(clientBW_) {}
       uint64 operator() () { return clientBW->getImcWrites(); }
    };
    
    struct ClientIoRequestsCounter : public AbstractRawCounter
    {
-      ClientBW * clientBW;
-      ClientIoRequestsCounter(ClientBW * clientBW_): clientBW(clientBW_) {}
+      std::shared_ptr<ClientBW> clientBW;
+      ClientIoRequestsCounter(std::shared_ptr<ClientBW> clientBW_) : clientBW(clientBW_) {}
       uint64 operator() () { return clientBW->getIoRequests(); }
+   };
+
+   struct MBLCounter : public AbstractRawCounter
+   {
+       std::shared_ptr<SafeMsrHandle> msr;
+       MBLCounter(std::shared_ptr<SafeMsrHandle> msr_) : msr(msr_){}
+       uint64 operator() ()
+       {
+           msr->lock();
+           msr->write(IA32_QM_EVTSEL, 0xdead); // TODO: change 0xdead to MBL event value
+           uint64 value = 0;
+           msr->read(IA32_PQR_ASSOC, &value);
+           msr->unlock();
+           return value;
+       }
+   };
+
+   struct MBRCounter : public AbstractRawCounter
+   {
+       SafeMsrHandle * msr;
+       MBRCounter(SafeMsrHandle * msr_) : msr(msr_){}
+       uint64 operator() ()
+       {
+           msr->lock();
+           msr->write(IA32_QM_EVTSEL, 0xdead); // TODO: change 0xdead to MBR event value
+           uint64 value = 0;
+           msr->read(IA32_PQR_ASSOC, &value);
+           msr->unlock();
+           return value;
+       }
    };
 
 private:
 
 #ifdef _MSC_VER
 	HANDLE UpdateThread;
-	HANDLE CounterMutex;
 #else
     pthread_t UpdateThread;
-    pthread_mutex_t CounterMutex;
 #endif
+
+    PCM_Util::Mutex CounterMutex;
 
     AbstractRawCounter * raw_counter;
     uint64 extended_value;
@@ -95,16 +127,13 @@ private:
 
     CounterWidthExtender(); // forbidden
     CounterWidthExtender(CounterWidthExtender&); // forbidden
+    CounterWidthExtender & operator = (const CounterWidthExtender &); // forbidden
 
     uint64 internal_read()
     {
-		if (this==NULL) return 0; // to make security check happy
 		uint64 result = 0, new_raw_value = 0;
-#ifdef _MSC_VER
-	 WaitForSingleObject(CounterMutex,INFINITE);
-#else
-	 pthread_mutex_lock(&CounterMutex);
-#endif
+        CounterMutex.lock();
+
          new_raw_value = (*raw_counter)();
 	 if(new_raw_value < last_raw_value)
          {
@@ -118,11 +147,8 @@ private:
          last_raw_value = new_raw_value;
 
          result = extended_value;	
-#ifdef _MSC_VER
-	 ReleaseMutex(CounterMutex);
-#else
-	 pthread_mutex_unlock(&CounterMutex);
-#endif
+
+         CounterMutex.unlock();
          return result;
     }
 
@@ -133,22 +159,18 @@ public:
         extended_value = last_raw_value;
 
 #ifdef _MSC_VER
-		CounterMutex = CreateMutex(NULL,FALSE,NULL);
 		UpdateThread = CreateThread(NULL,0,(LPTHREAD_START_ROUTINE)WatchDogProc,this,0,NULL);
 #else
-        pthread_mutex_init(&CounterMutex, NULL);
         pthread_create(&UpdateThread, NULL, WatchDogProc, this);
 #endif
     }
-    ~CounterWidthExtender()
+    virtual ~CounterWidthExtender()
     {
 #ifdef _MSC_VER
 		TerminateThread(UpdateThread,0);
 		CloseHandle(UpdateThread);
-		CloseHandle(CounterMutex);
 #else
         pthread_cancel(UpdateThread);
-        pthread_mutex_destroy(&CounterMutex);
 #endif
         if(raw_counter) delete raw_counter;
     }
