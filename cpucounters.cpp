@@ -1,5 +1,6 @@
 /*
 Copyright (c) 2009-2014, Intel Corporation
+some parts Copyright (c) 2015 Marius Hillenbrand, Karlsruhe Institute of Technology
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
@@ -16,6 +17,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 //            Pat Fay
 //            Austen Ott
 //            Jim Harris (FreeBSD)
+//            Marius Hillenbrand (LLC-related code for CBoxes)
 
 /*!     \file cpucounters.cpp
         \brief The bulk of Intel PCM implementation
@@ -436,6 +438,12 @@ void PCM::initL3CacheOccupancyMonitoring()
         {
             return;
         }
+
+		/* Check if we can access MSRs at all (would segfault otherwise) */
+		if(MSR == NULL)
+		{
+			return;
+		}
 
 		unsigned maxRMID;
 
@@ -4342,12 +4350,31 @@ void PCM::programCboOpcodeFilter(const uint32 opc, const uint32 cbo, SafeMsrHand
     }
 }
 
-void PCM::programPCIeMissCounters(const PCM::PCIeEventCode event_, const uint32 tid_)
+void PCM::programCboFilter0(const uint32 state, const int32 filterCoreId, const int32 filterThreadId, const uint32 cbo, SafeMsrHandle * msr)
+{
+    uint32 tid = 0;
+
+    if(filterCoreId != -1 && filterThreadId != -1) {
+	tid = ( ((filterCoreId & 0xf) << 1) | (filterThreadId & 0x1) );
+    }
+
+    if(JAKETOWN == cpu_model || IVYTOWN == cpu_model)
+    {
+	// erm, I do not know, do not care.
+
+    } else if(HASWELLX == cpu_model)
+    {
+        msr->write(CX_MSR_PMON_BOX_FILTER(cbo), HSX_CBO_MSR_PMON_BOX_FILTER_STATE(state) | tid);
+    }
+}
+
+
+void PCM::programPCIeMissCounters(const PCM::CBoxOpcode event_, const uint32 tid_)
 {
     programPCIeCounters(event_,tid_,1);
 }
 
-void PCM::programPCIeCounters(const PCM::PCIeEventCode event_, const uint32 tid_, const uint32 miss_)
+void PCM::programPCIeCounters(const PCM::CBoxOpcode event_, const uint32 tid_, const uint32 miss_)
 {
     for (int32 i = 0; (i < num_sockets) && MSR; ++i)
     {
@@ -4389,6 +4416,124 @@ void PCM::programPCIeCounters(const PCM::PCIeEventCode event_, const uint32 tid_
     }
 }
 
+// programLLCCounters
+void PCM::programLLCCounters(LLCRequestType requestType, CBoxOpcode opcode, int filterCoreId, int filterThreadId)
+{
+
+    // minimal attempt at docs:
+    //   * there are two filter config registers per CBox, which allow
+    //     filtering events for cache line state, opcode of a request,
+    //     and originating core/thread id and node id.
+    //  * the event configuration specifies which filters are active.
+    //    The LLC_LOOKUP event uses cache line state but not request
+    //    opcode, the TOR_INSERT filters for opcode, but not cache line
+    //    state.
+    // 
+    // Here we use counter 0 for the LLC_LOOKUP event and
+    // counter 1 for the TOR_INSERT event for tracking incoming
+    // requests.
+    //
+    // We optionally filter LLC_LOOKUPs for cache line state and
+    // TOR_INSERTs for opcode (and request type). In both cases, the
+    // Any/AnyOp pseudo-filter causes all events to be counted.
+    //
+    // Further, we allow to filter events for the originating core and
+    // thread.
+    // tid field in FILTER0:
+    //   * bit 5: non-thread related data
+    //   * bits 4:1 core-id
+    //   * bit 0: thread id on the core
+    //     (someone does not like SMT beyond 2-thread HT?!)
+    // tid_en field in the counter config registers (bit 19)
+
+    // TODO move this documentation somewhere else
+
+    for (int32 i = 0; (i < num_sockets) && MSR; ++i)
+    {
+        uint32 refCore = socketRefCore[i];
+        TemporalThreadAffinity tempThreadAffinity(refCore); // speedup trick for Linux
+
+	uint32 tid_en = 0;
+
+	if(filterCoreId != -1 && filterThreadId != -1)
+	    tid_en = CBO_MSR_PMON_CTL_TID_EN;
+
+        for(uint32 cbo = 0; cbo < getMaxNumOfCBoxes(); ++cbo)
+        {
+            // freeze enable
+            MSR[refCore]->write(CX_MSR_PMON_BOX_CTL(cbo), CBO_MSR_PMON_BOX_CTL_FRZ_EN);
+            // freeze
+            MSR[refCore]->write(CX_MSR_PMON_BOX_CTL(cbo), CBO_MSR_PMON_BOX_CTL_FRZ_EN + CBO_MSR_PMON_BOX_CTL_FRZ);
+
+#ifdef PCM_UNCORE_PMON_BOX_CHECK_STATUS
+            uint64 val = 0;
+            MSR[refCore]->read(CX_MSR_PMON_BOX_CTL(cbo), &val);
+            if ((val & UNCORE_PMON_BOX_CTL_VALID_BITS_MASK) != (CBO_MSR_PMON_BOX_CTL_FRZ_EN + CBO_MSR_PMON_BOX_CTL_FRZ))
+            {
+                std::cerr << "ERROR: CBO counter programming seems not to work. ";
+                std::cerr << "C" << std::dec << cbo << "_MSR_PMON_BOX_CTL=0x" << std::hex << val << std::endl;
+            }
+#endif
+	    // program filter 0, state to 0x1F
+	    programCboFilter0(0x1F, filterCoreId, filterThreadId, cbo, MSR[refCore]);
+
+            MSR[refCore]->write(CX_MSR_PMON_CTLY(cbo, 0), CBO_MSR_PMON_CTL_EN);
+            // LLC_Lookup event, capture any request
+            MSR[refCore]->write(CX_MSR_PMON_CTLY(cbo, 0), \
+		    CBO_MSR_PMON_CTL_EN | CBO_MSR_PMON_CTL_EVENT(0x34) \
+		    | (CBO_MSR_PMON_CTL_UMASK(requestType)) | tid_en);
+
+
+            MSR[refCore]->write(CX_MSR_PMON_CTLY(cbo, 1), CBO_MSR_PMON_CTL_EN);
+	    // program counter 1 for TOR_INSERTS
+	    // umask: all requests
+	    uint64 umask;
+	    switch(opcode) {
+		case AnyOp: umask = 0x08; break;
+		case WB:    umask = 0x10; break;
+		default:    umask = 0x01; // filtered by opcode
+			    // program filter 1, opcode
+			    programCboOpcodeFilter(opcode, cbo, MSR[refCore]);
+			    break;
+	    }
+
+	    // TODO change umask for filtering for opcodes
+	    MSR[refCore]->write(CX_MSR_PMON_CTLY(cbo, 1), \
+		    CBO_MSR_PMON_CTL_EN | CBO_MSR_PMON_CTL_EVENT(0x35) \
+		    | CBO_MSR_PMON_CTL_UMASK(umask) | tid_en );
+
+            // reset counter values
+            MSR[refCore]->write(CX_MSR_PMON_BOX_CTL(cbo), CBO_MSR_PMON_BOX_CTL_FRZ_EN + CBO_MSR_PMON_BOX_CTL_FRZ + CBO_MSR_PMON_BOX_CTL_RST_COUNTERS);
+
+            // unfreeze counters
+            MSR[refCore]->write(CX_MSR_PMON_BOX_CTL(cbo), CBO_MSR_PMON_BOX_CTL_FRZ_EN);
+        }
+    }
+}
+
+LLCCounterState PCM::getLLCCounterState(const uint32 socket_)
+{
+    uint32 refCore = socketRefCore[socket_];
+    TemporalThreadAffinity tempThreadAffinity(refCore); // speedup trick for Linux
+
+    uint32 cbo;
+
+    LLCCounterState res;
+
+    for(cbo=0; cbo < getMaxNumOfCBoxes() && cbo < 18; ++cbo)
+    {
+        uint64 ctrVal = 0;
+	// get number of LLC lookups from first counter
+        MSR[refCore]->read(CX_MSR_PMON_CTRY(cbo, 0), &ctrVal);
+        res.lookups[cbo] = ctrVal;
+	// get number of requests from second counter
+        MSR[refCore]->read(CX_MSR_PMON_CTRY(cbo, 1), &ctrVal);
+        res.requests[cbo] = ctrVal;
+    }
+
+    return res;
+}
+
 PCIeCounterState PCM::getPCIeCounterState(const uint32 socket_)
 {
     PCIeCounterState result;
@@ -4404,3 +4549,48 @@ PCIeCounterState PCM::getPCIeCounterState(const uint32 socket_)
     }
     return result;
 }
+
+std::ostream& operator<<(std::ostream& out, const PCM::CBoxOpcode opc) {
+	const char * str = 0;
+#define STR_CASE(v) case(PCM::v): str = #v; break;
+	switch(opc) {
+	    STR_CASE(PCIeRdCur);
+	    STR_CASE(PCIeNSRd);
+	    STR_CASE(PCIeWiLF);
+	    STR_CASE(PCIeItoM);
+	    STR_CASE(PCIeNSWr);
+	    STR_CASE(PCIeNSWrF);
+	    STR_CASE(RFO);
+	    STR_CASE(CRd);
+	    STR_CASE(DRd);
+	    STR_CASE(PRd);
+	    STR_CASE(WCiLF);
+	    STR_CASE(WCiL);
+	    STR_CASE(WiL);
+	    STR_CASE(WbMtoI);
+	    STR_CASE(WbMtoE);
+	    STR_CASE(ItoM);
+	    case PCM::AnyOp: str = "Any"; break;
+	    STR_CASE(WB);
+	}
+	out << str;
+	return out;
+    }
+#undef STR_CASE
+
+std::ostream& operator<<(std::ostream& out, const PCM::LLCRequestType type) {
+	const char * str = 0;
+#define STR_CASE(v) case(PCM::v): str = #v; break;
+	switch(type) {
+	    STR_CASE(DataRead);
+	    STR_CASE(Write);
+	    STR_CASE(RemoteSnoop);
+	    STR_CASE(Any);
+	    STR_CASE(Read);
+	    STR_CASE(Nid);
+	}
+	out << str;
+	return out;
+    }
+#undef STR_CASE
+

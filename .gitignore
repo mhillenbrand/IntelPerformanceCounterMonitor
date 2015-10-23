@@ -17,3 +17,6 @@
 *.vxd
 *.exe
 *.tgz
+tags
+intelpcm.so/libintelpcm.so
+intelpcm.so/libintelpcm.a

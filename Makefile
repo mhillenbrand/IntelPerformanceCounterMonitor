@@ -3,15 +3,15 @@
 # written by Roman Dementiev and Jim Harris
 #
 
-EXE = pcm-numa.x pcm-power.x pcm.x pcm-sensor.x pcm-msr.x pcm-memory.x pcm-tsx.x pcm-pcie.x
+EXE = pcm-numa.x pcm-power.x pcm.x pcm-sensor.x pcm-msr.x pcm-memory.x pcm-tsx.x pcm-pcie.x pcm-llc.x
 
 all: $(EXE)
 
-CXXFLAGS += -Wall -g -O3 
+CXXFLAGS += -Wall -g -O3
 
 # uncomment if you want to rely on Linux perf support (user needs CAP_SYS_ADMIN privileges)
 ifneq ($(wildcard /usr/include/linux/perf_event.h),)
-#CXXFLAGS += -DPCM_USE_PERF 
+CXXFLAGS += -DPCM_USE_PERF
 endif
 
 UNAME:=$(shell uname)
@@ -20,8 +20,8 @@ ifeq ($(UNAME), Linux)
 LIB= -pthread -lrt
 endif
 ifeq ($(UNAME), Darwin)
-LIB= -lpthread /usr/lib/libPcmMsr.dylib 
-CXXFLAGS += -I/usr/include 
+LIB= -lpthread /usr/lib/libPcmMsr.dylib
+CXXFLAGS += -I/usr/include
 endif
 ifeq ($(UNAME), FreeBSD)
 CXX=c++
