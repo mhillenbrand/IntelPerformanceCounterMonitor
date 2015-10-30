@@ -28,10 +28,12 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 #include <sstream>
 #include <iomanip>
 
-typedef unsigned long long uint64;
-typedef signed long long int64;
-typedef unsigned int uint32;
-typedef signed int int32;
+#include <stdint.h>
+
+typedef uint64_t uint64;
+typedef int64_t  int64;
+typedef uint32_t uint32;
+typedef int32_t  int32;
 
 
 /*
@@ -690,6 +692,8 @@ struct BecktonUncorePMUCNTCTLRegister
 
 #define JKT_CBO_MSR_PMON_BOX_FILTER_OPC(x) (x<<23UL)
 #define IVTHSX_CBO_MSR_PMON_BOX_FILTER1_OPC(x) (x<<20UL)
+
+#define HSX_CBO_MSR_PMON_BOX_FILTER_STATE(x) (x<<17UL)
 
 #define MSR_PACKAGE_THERM_STATUS (0x01B1)
 #define MSR_IA32_THERM_STATUS    (0x019C)

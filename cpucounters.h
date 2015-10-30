@@ -194,13 +194,20 @@ class PCIeCounterState
 {
     friend uint64 getNumberOfEvents(PCIeCounterState before, PCIeCounterState after);
     friend class PCM;
-    uint64 data;
 public:
+    uint64 data;
     PCIeCounterState(): data(0)
     {
     }
     virtual ~PCIeCounterState() {}
 };
+
+struct LLCCounterState {
+    uint64 lookups[18];
+    uint64 requests[18];
+};
+
+
 
 #ifndef HACK_TO_REMOVE_DUPLICATE_ERROR 
 template class INTELPCM_API std::allocator<TopologyEntry>;
@@ -460,6 +467,7 @@ private:
     uint64 CX_MSR_PMON_BOX_CTL(uint32 Cbo) const;
     uint32 getMaxNumOfCBoxes() const;
     void programCboOpcodeFilter(const uint32 opc, const uint32 cbo, std::shared_ptr<SafeMsrHandle> msr);
+    void programCboFilter0(const uint32 state, const int32 filterCoreId, const int32 filterThreadId, const uint32 cbo, std::shared_ptr<SafeMsrHandle> msr);
 
 public:
     /*!
@@ -468,6 +476,8 @@ public:
      	 	 \returns true or false
      */
     bool L3CacheOccupancyMetricAvailable();
+
+    uint32 getMaxNumOfCBoxes() const;
 
     /*!
      * 		\brief returns the max number of RMID supported by socket
@@ -843,7 +853,8 @@ public:
 
     inline void disableJKTWorkaround() { disable_JKT_workaround = true; }
 
-    enum PCIeEventCode
+    // hijacked for more general opcodes
+    enum CBoxOpcode
     {
         // PCIe read events (PCI devices reading from memory - application writes to disk/network/PCIe device)
         PCIeRdCur = 0x19E, // PCIe read current (full cache line)
@@ -858,9 +869,17 @@ public:
         CRd = 0x181,       // Demand Code Read
         DRd = 0x182,       // Demand Data Read
         PRd = 0x187,       // Partial Reads (UC) (MMIO Read)
+	WCiLF = 0x18C,     // Full Streaming Store - write invalidate full cache line
+	WCiL  = 0x18D,     // Partial Streaming Store - write invalidate for partial cache line
         WiL = 0x18F,       // Write Invalidate Line - partial (MMIO write), PL: Not documented in HSX/IVT
+	WbMtoI = 0x1C4,    // Request writeback and invalidation of modified line
+	WbMtoE = 0x1C5,    // Request writeback of modified line, set to exclusive
         ItoM = 0x1C8,      // Request Invalidate Line; share the same code for CPU, use tid to filter PCIe only traffic
+	WB, // pseudo-opcode for actual writebacks
+	AnyOp, // pseudo-opcode for do not filter
     };
+
+    friend std::ostream& operator<<(std::ostream& out, const CBoxOpcode opc);
 
     enum CBoEventTid
     {
@@ -871,13 +890,43 @@ public:
     //! \brief Program uncore PCIe monitoring event(s)
     //! \param event_ a PCIe event to monitor
     //! \param tid_ tid filter (PCM supports it only on Haswell server)
-    void programPCIeCounters(const PCIeEventCode event_, const uint32 tid_ = 0, const uint32 miss_ = 0);
-    void programPCIeMissCounters(const PCIeEventCode event_, const uint32 tid_ = 0);
+    void programPCIeCounters(const CBoxOpcode event_, const uint32 tid_ = 0, const uint32 miss_ = 0);
+    void programPCIeMissCounters(const CBoxOpcode event_, const uint32 tid_ = 0);
 
     //! \brief Get the state of PCIe counter(s)
     //! \param socket_ socket of the PCIe controller
     //! \return State of PCIe counter(s)
     PCIeCounterState getPCIeCounterState(const uint32 socket_);
+
+    enum LLCRequestType
+    {
+	DataRead = 0x03,
+	Write    = 0x05,
+	RemoteSnoop = 0x09,
+	Any      = 0x11,
+	Read     = 0x21, // any read request
+	Nid      = 0x41, // Node Id filter
+
+    };
+
+    friend std::ostream& operator<<(std::ostream& out, const LLCRequestType type);
+
+    //! \brief Program uncore LLC monitoring event(s)
+    //! \param requestType which types of requests to monitor
+    void programLLCCounters(LLCRequestType requestType, \
+	    CBoxOpcode opcode, int filterCoreId, int filterThreadId);
+
+    // TODO add function with opcode filter ..., add opcode any?!
+
+    //! \brief Program uncore LLC monitoring for any request type
+    void programLLCCounters() { programLLCCounters(Any, AnyOp, -1, -1); }
+
+    //! \brief Return current counter values of Cboxes
+    //! \param socket_ socket where to read Cbox counters
+    //! \param res pointer to array where to store counter values
+    //! \param res_len number of counter values to store
+    //! \return number of counter values read
+    LLCCounterState getLLCCounterState(const uint32 socket_);
 
     uint64 extractCoreGenCounterValue(uint64 val);
     uint64 extractCoreFixedCounterValue(uint64 val);
