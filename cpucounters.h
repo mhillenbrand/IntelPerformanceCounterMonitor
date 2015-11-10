@@ -465,7 +465,6 @@ private:
     uint64 CX_MSR_PMON_BOX_FILTER1(uint32 Cbo) const;
     uint64 CX_MSR_PMON_CTLY(uint32 Cbo, uint32 Ctl) const;
     uint64 CX_MSR_PMON_BOX_CTL(uint32 Cbo) const;
-    uint32 getMaxNumOfCBoxes() const;
     void programCboOpcodeFilter(const uint32 opc, const uint32 cbo, std::shared_ptr<SafeMsrHandle> msr);
     void programCboFilter0(const uint32 state, const int32 filterCoreId, const int32 filterThreadId, const uint32 cbo, std::shared_ptr<SafeMsrHandle> msr);
 

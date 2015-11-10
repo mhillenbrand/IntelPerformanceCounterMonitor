@@ -473,12 +473,6 @@ void PCM::initL3CacheOccupancyMonitoring()
             return;
         }
 
-		/* Check if we can access MSRs at all (would segfault otherwise) */
-		if(MSR == NULL)
-		{
-			return;
-		}
-
 		unsigned maxRMID;
 
 		const uint64 event = 1; //L3 Occupancy monitoring
@@ -4248,7 +4242,7 @@ void PCM::programCboOpcodeFilter(const uint32 opc, const uint32 cbo, std::shared
     }
 }
 
-void PCM::programCboFilter0(const uint32 state, const int32 filterCoreId, const int32 filterThreadId, const uint32 cbo, SafeMsrHandle * msr)
+void PCM::programCboFilter0(const uint32 state, const int32 filterCoreId, const int32 filterThreadId, const uint32 cbo, std::shared_ptr<SafeMsrHandle> msr)
 {
     uint32 tid = 0;
 
@@ -4326,7 +4320,7 @@ void PCM::programLLCCounters(LLCRequestType requestType, CBoxOpcode opcode, int 
     //    The LLC_LOOKUP event uses cache line state but not request
     //    opcode, the TOR_INSERT filters for opcode, but not cache line
     //    state.
-    // 
+    //
     // Here we use counter 0 for the LLC_LOOKUP event and
     // counter 1 for the TOR_INSERT event for tracking incoming
     // requests.
@@ -4346,7 +4340,7 @@ void PCM::programLLCCounters(LLCRequestType requestType, CBoxOpcode opcode, int 
 
     // TODO move this documentation somewhere else
 
-    for (int32 i = 0; (i < num_sockets) && MSR; ++i)
+    for (int32 i = 0; i < num_sockets; ++i)
     {
         uint32 refCore = socketRefCore[i];
         TemporalThreadAffinity tempThreadAffinity(refCore); // speedup trick for Linux
