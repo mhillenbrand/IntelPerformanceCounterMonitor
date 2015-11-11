@@ -889,6 +889,8 @@ void getPCIeEvents(PCM *m, PCM::CBoxOpcode opcode, uint32 delay_ms, sample_t *sa
                 sample[i].hit.DRd += (sample[i].total.DRd > sample[i].miss.DRd) ? sample[i].total.DRd - sample[i].miss.DRd : 0;
                 aggregate_sample.DRd += sample[i].total.DRd;
                 break;
+	    default: // other CBox opcodes not used in this utility.
+		break;
         }
     }
 

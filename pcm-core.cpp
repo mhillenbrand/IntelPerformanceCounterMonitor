@@ -30,6 +30,7 @@
 #endif
 #include <math.h>
 #include <iomanip>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -152,7 +153,7 @@ void build_event(const char * argv, EventSelectRegister *reg, int idx)
                 reg->fields.in_txcp = tmp;
             else if(sscanf(subtoken,"pc=%i",&tmp) == 1)
                 reg->fields.pin_control = tmp;
-            else if(sscanf(subtoken,"offcore_rsp=%llx",&tmp2) == 1) {
+            else if(sscanf(subtoken,"offcore_rsp=%" PRIx64, &tmp2) == 1) {
 		    if(idx >= 2)
 		    {
 			    cerr << "offcore_rsp must specify in first or second event only. idx=" << idx << endl;

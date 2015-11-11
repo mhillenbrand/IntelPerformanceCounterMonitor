@@ -9,7 +9,7 @@ all: $(EXE)
 
 klocwork: $(EXE)
 
-CXXFLAGS += -Wall -g -O3 -Wno-unknown-pragmas
+CXXFLAGS += -Wall -g -O3 -Wno-unknown-pragmas -Werror
 
 # uncomment if you want to rely on Linux perf support (user needs CAP_SYS_ADMIN privileges)
 ifneq ($(wildcard /usr/include/linux/perf_event.h),)
