@@ -22,7 +22,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
         Include this header file if you want to access CPU counters (core and uncore - including memory controller chips and QPI)
 */
 
-#define INTEL_PCM_VERSION "V2.9 (2015-08-07 10:23:17 +0200 ID=721d9e3)"
+#define INTEL_PCM_VERSION "V2.10 (2015-11-17 09:01:38 +0100 ID=cd66c34)"
 
 #define INTEL_PCM_COPYRIGHT " Copyright (c) 2009-2015 Intel Corporation"
 
@@ -180,7 +180,7 @@ public:
         std::cerr.precision(1);
         std::cerr << std::fixed;
         for (uint32 i = 0; i<(uint32)qpi_speed.size(); ++i)
-          std::cerr << "Max QPI link " << i << " speed: " << qpi_speed[i] / (1e9) << " GBytes/second (" << qpi_speed[i] / (2e9) << " GT/second)" << std::endl;
+          std::cerr << "Max QPI link " << i << " speed: " << qpi_speed[i] / (1e9) << " GBytes/second (" << qpi_speed[i] / (1e9*double(DATA_BYTES_PER_QPI_CYCLE)) << " GT/second)" << std::endl;
     }
 
 	 //! \brief Returns the number of detected integrated memory controllers
@@ -269,6 +269,8 @@ class INTELPCM_API PCM
     std::vector<std::shared_ptr<CounterWidthExtender> > energy_status;
     std::vector<std::shared_ptr<CounterWidthExtender> > dram_energy_status;
 
+    std::vector<std::shared_ptr<CounterWidthExtender> > memory_bw_local;
+    std::vector<std::shared_ptr<CounterWidthExtender> > memory_bw_total;
 
     std::shared_ptr<ClientBW> clientBW;
     std::shared_ptr<CounterWidthExtender> clientImcReads;
@@ -440,15 +442,23 @@ private:
     bool detectNominalFrequency();
     void initEnergyMonitoring();
     void initUncoreObjects();
-    /*!
-     * 		\brief initializes each core with RMId for cache monitoring
+     /*!
+     * 		\brief initializes each core with an RMID
      *
      * 		\returns nothing
      */
-    void initL3CacheOccupancyMonitoring();
+    void initRMID();
+    /*!
+     * 		\brief initializes each core event MSR with an RMID for QOS event (L3 cache monitoring or memory bandwidth monitoring)
+     *
+     * 		\returns nothing
+    */
+    void initQOSevent(const uint64 event, const int32 core);
     void programBecktonUncore(int core);
     void programNehalemEPUncore(int core);
     void enableJKTWorkaround(bool enable);
+    template <class CounterStateType>
+    void readAndAggregateMemoryBWCounters(const uint32 core, CounterStateType & counterState);
     template <class CounterStateType>
     void readAndAggregateUncoreMCCounters(const uint32 socket, CounterStateType & counterState);
     template <class CounterStateType>
@@ -470,13 +480,35 @@ private:
 
 public:
     /*!
-     	 	 \brief checks if cache monitoring present
+     	 	 \brief checks if QOS monitoring support present
+
+     	 	 \returns true or false
+     */
+    bool QOSMetricAvailable();
+    /*!
+     	 	 \brief checks L3 cache support for QOS present
+
+     	 	 \returns true or false
+     */
+    bool L3QOSMetricAvailable();
+    /*!
+     	 	 \brief checks if L3 cache monitoring present
 
      	 	 \returns true or false
      */
     bool L3CacheOccupancyMetricAvailable();
+    /*!
+    		\brief checks if local memory bandwidth monitoring present
 
-    uint32 getMaxNumOfCBoxes() const;
+    		\returns true or false
+    */
+    bool CoreLocalMemoryBWMetricAvailable();
+	/*!
+	\brief checks if total memory bandwidth monitoring present
+
+	\returns true or false
+	*/
+	bool CoreRemoteMemoryBWMetricAvailable();
 
     /*!
      * 		\brief returns the max number of RMID supported by socket
@@ -484,6 +516,8 @@ public:
      * 		\returns maximum number of RMID supported by socket
      */
     unsigned getMaxRMID() const;
+
+    uint32 getMaxNumOfCBoxes() const;
 
     /*!
             \brief Returns PCM object
@@ -686,6 +720,7 @@ public:
         BROADWELL = 61,
         BROADWELL_XEON_E3 = 71,
         BDX_DE = 86,
+        SKL_UY = 78,
         SKL = 94,
         END_OF_MODEL_LIST = 0x0ffff
     };
@@ -931,7 +966,7 @@ public:
     uint64 extractCoreFixedCounterValue(uint64 val);
     uint64 extractUncoreGenCounterValue(uint64 val);
     uint64 extractUncoreFixedCounterValue(uint64 val);
-    uint64 extractL3CacheOccupancy(uint64 val);
+    uint64 extractQOSMonitoring(uint64 val);
 
     //! \brief Get a string describing the codename of the processor microarchitecture
     //! \param cpu_model_ cpu model (if no parameter provided the codename of the detected CPU is returned)
@@ -982,7 +1017,16 @@ public:
             ||  cpu_model == PCM::JAKETOWN
             ||  cpu_model == PCM::IVYTOWN
             ||  cpu_model == PCM::HASWELLX
-            ||  cpu_model == PCM::BDX_DE
+               );
+    }
+
+    bool incomingQPITrafficMetricsAvailable() const
+    {
+        return (
+                cpu_model == PCM::NEHALEM_EX
+            ||  cpu_model == PCM::WESTMERE_EX
+            ||  cpu_model == PCM::JAKETOWN
+            ||  cpu_model == PCM::IVYTOWN
                );
     }
 
@@ -1069,8 +1113,12 @@ class BasicCounterState
     friend uint64 getL2CacheMisses(const CounterStateType & before, const CounterStateType & after);
     template <class CounterStateType>
     friend uint64 getL2CacheHits(const CounterStateType & before, const CounterStateType & after);
-	template <class CounterStateType>
-	friend uint64 getL3CacheOccupancy(const CounterStateType & now);
+    template <class CounterStateType>
+    friend uint64 getL3CacheOccupancy(const CounterStateType & now);
+    template <class CounterStateType>
+    friend uint64 getLocalMemoryBW(const CounterStateType & before, const CounterStateType & after);
+    template <class CounterStateType>
+    friend uint64 getRemoteMemoryBW(const CounterStateType & before, const CounterStateType & after);
     template <class CounterStateType>
     friend uint64 getCycles(const CounterStateType & before, const CounterStateType & after);
     template <class CounterStateType>
@@ -1123,6 +1171,8 @@ protected:
     int32 ThermalHeadroom;
     uint64 L3Occupancy;
     void readAndAggregate(std::shared_ptr<SafeMsrHandle>);
+    uint64 MemoryBWLocal;
+    uint64 MemoryBWTotal;
 public:
     BasicCounterState() : 
       InstRetiredAny(0)
@@ -1135,6 +1185,8 @@ public:
     , InvariantTSC(0) 
     , ThermalHeadroom(PCM_INVALID_THERMAL_HEADROOM)
     , L3Occupancy(0)
+    , MemoryBWLocal(0)
+    , MemoryBWTotal(0)
     {
         memset(CStateResidency, 0, sizeof(CStateResidency));
     }
@@ -1154,6 +1206,8 @@ public:
             CStateResidency[i] += o.CStateResidency[i];
         // ThermalHeadroom is not accumulative
 	L3Occupancy += o.L3Occupancy;
+        MemoryBWLocal += o.MemoryBWLocal;
+	MemoryBWTotal += o.MemoryBWTotal;
         return *this;
     }
 
@@ -1913,6 +1967,28 @@ uint64 getL3CacheOccupancy(const CounterStateType & now)
 {
 	return now.L3Occupancy ;
 }
+/*! \brief Computes Local Memory Bandwidth
+
+ */
+template <class CounterStateType>
+uint64 getLocalMemoryBW(const CounterStateType & before, const CounterStateType & after)
+{
+	return after.MemoryBWLocal - before.MemoryBWLocal;
+}
+
+/*! \brief Computes Remote Memory Bandwidth
+
+ */
+template <class CounterStateType>
+uint64 getRemoteMemoryBW(const CounterStateType & before, const CounterStateType & after)
+{
+        const uint64 total = after.MemoryBWTotal - before.MemoryBWTotal;
+        const uint64 local = getLocalMemoryBW(before, after);
+        if(total > local)
+            return total - local;
+
+	return 0;
+}
 
 /*! \brief Computes number of L3 cache hits where no snooping in sibling L2 caches had to be done
 
@@ -2081,6 +2157,7 @@ uint64 getNumberOfCustomEvents(int32 eventCounterNr, const CounterStateType & be
 */
 inline uint64 getIncomingQPILinkBytes(uint32 socketNr, uint32 linkNr, const SystemCounterState & before, const SystemCounterState & after)
 {
+    if(!PCM::getInstance()->incomingQPITrafficMetricsAvailable()) return 0;
     uint64 b = before.incomingQPIPackets[socketNr][linkNr];
     uint64 a = after.incomingQPIPackets[socketNr][linkNr];
     // prevent overflows due to counter dissynchronisation
@@ -2140,7 +2217,7 @@ inline double getOutgoingQPILinkUtilization(uint32 socketNr, uint32 linkNr, cons
       const uint64 a = after.outgoingQPIDataNonDataFlits[socketNr][linkNr];
        // prevent overflows due to counter dissynchronisation
       const double flits = (double)((a > b) ? (a - b) : 0);
-      const double max_flits = ((double(getInvariantTSC(before, after))*double(m->getQPILinkSpeed(socketNr, linkNr))/(2.0*4.0))/double(m->getNominalFrequency()))/double(m->getNumCores());
+      const double max_flits = ((double(getInvariantTSC(before, after))*double(m->getQPILinkSpeed(socketNr, linkNr))/double(DATA_BYTES_PER_QPI_FLIT))/double(m->getNominalFrequency()))/double(m->getNumCores());
       if(flits > max_flits) return 1.; // prevent oveflows due to potential counter dissynchronization
       return (flits / max_flits);
     }

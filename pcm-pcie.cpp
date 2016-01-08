@@ -288,7 +288,7 @@ int main(int argc, char * argv[])
     cerr << "delay_ms: " << delay_ms << endl;
     
     if( sysCmd != NULL ) {
-        MySystem(sysCmd, sysArgv); delay = 0;
+        MySystem(sysCmd, sysArgv);
     }
 
 	// ================================== Begin Printing Output ==================================

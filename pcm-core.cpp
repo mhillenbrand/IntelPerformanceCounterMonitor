@@ -339,7 +339,7 @@ int main(int argc, char * argv[])
     m->getAllCounterStates(SysBeforeState, DummySocketStates, BeforeState);
 
     if( sysCmd != NULL ) {
-        MySystem(sysCmd, sysArgv); delay = 0;
+        MySystem(sysCmd, sysArgv);
     }
 
     while(1)

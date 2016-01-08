@@ -157,6 +157,8 @@ NTSTATUS deviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             input_msr_req = (struct MSR_Request *)Irp->AssociatedIrp.SystemBuffer;
             input_pcicfg_req = (struct PCICFG_Request *)Irp->AssociatedIrp.SystemBuffer;
             output = (ULONG64 *)Irp->AssociatedIrp.SystemBuffer;
+            PROCESSOR_NUMBER ProcNumber;
+            memset(&ProcNumber, 0, sizeof(PROCESSOR_NUMBER));
 
             switch (IrpStackLocation->Parameters.DeviceIoControl.IoControlCode)
             {
@@ -168,13 +170,9 @@ NTSTATUS deviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
                 }
                 memset(&new_affinity, 0, sizeof(GROUP_AFFINITY));
                 memset(&old_affinity, 0, sizeof(GROUP_AFFINITY));
-                new_affinity.Group = 0;
-                while ((ULONG)input_msr_req->core_id >= (currentGroupSize = KeQueryMaximumProcessorCountEx(new_affinity.Group)))
-                {
-                    input_msr_req->core_id -= currentGroupSize;
-                    ++new_affinity.Group;
-                }
-                new_affinity.Mask = 1ULL << (input_msr_req->core_id);
+                KeGetProcessorNumberFromIndex(input_msr_req->core_id, &ProcNumber);
+                new_affinity.Group = ProcNumber.Group;
+                new_affinity.Mask = 1ULL << (ProcNumber.Number);
                 KeSetSystemGroupAffinityThread(&new_affinity, &old_affinity);
                 __writemsr(input_msr_req->msr_address, input_msr_req->write_value);
                 KeRevertToUserGroupAffinityThread(&old_affinity);
@@ -188,13 +186,9 @@ NTSTATUS deviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
                 }
                 memset(&new_affinity, 0, sizeof(GROUP_AFFINITY));
                 memset(&old_affinity, 0, sizeof(GROUP_AFFINITY));
-                new_affinity.Group = 0;
-                while ((ULONG)input_msr_req->core_id >= (currentGroupSize = KeQueryMaximumProcessorCountEx(new_affinity.Group)))
-                {
-                    input_msr_req->core_id -= currentGroupSize;
-                    ++new_affinity.Group;
-                }
-                new_affinity.Mask = 1ULL << (input_msr_req->core_id);
+                KeGetProcessorNumberFromIndex(input_msr_req->core_id, &ProcNumber);
+                new_affinity.Group = ProcNumber.Group;
+                new_affinity.Mask = 1ULL << (ProcNumber.Number);
                 KeSetSystemGroupAffinityThread(&new_affinity, &old_affinity);
                 *output = __readmsr(input_msr_req->msr_address);
                 KeRevertToUserGroupAffinityThread(&old_affinity);

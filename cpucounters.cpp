@@ -340,14 +340,13 @@ uint64 PCM::extractUncoreFixedCounterValue(uint64 val)
     return val;
 }
 
-uint64 PCM::extractL3CacheOccupancy(uint64 val)
+uint64 PCM::extractQOSMonitoring(uint64 val)
 {
 	//Check if any of the error bit(63) or Unavailable bit(62) of the IA32_QM_CTR MSR are 1
-
 	if(val & (3ULL<<62))
 	{
 		// invalid reading
-        return static_cast<uint64>(PCM_INVALID_L3_CACHE_OCCUPANCY);
+        return static_cast<uint64>(PCM_INVALID_QOS_MONITORING_DATA);
 	}
 
 	// valid reading
@@ -449,11 +448,45 @@ bool PCM::detectModel()
     return true;
 }
 
-bool PCM::L3CacheOccupancyMetricAvailable()
+bool PCM::QOSMetricAvailable()
 {
 	PCM_CPUID_INFO cpuinfo;
 	pcm_cpuid(0x7,0,cpuinfo);
 	return (cpuinfo.reg.ebx & (1<<12))?true:false;
+}
+
+bool PCM::L3QOSMetricAvailable()
+{
+	PCM_CPUID_INFO cpuinfo;
+	pcm_cpuid(0xf,0,cpuinfo);
+	return (cpuinfo.reg.edx & (1<<1))?true:false;
+}
+
+bool PCM::L3CacheOccupancyMetricAvailable()
+{
+	PCM_CPUID_INFO cpuinfo;
+	if (!(QOSMetricAvailable() & L3QOSMetricAvailable()))
+		return false;
+	pcm_cpuid(0xf,0x1,cpuinfo);
+	return (cpuinfo.reg.edx & 1)?true:false;
+}
+
+bool PCM::CoreLocalMemoryBWMetricAvailable()
+{
+	PCM_CPUID_INFO cpuinfo;
+	if (!(QOSMetricAvailable() & L3QOSMetricAvailable()))
+			return false;
+	pcm_cpuid(0xf,0x1,cpuinfo);
+	return (cpuinfo.reg.edx & 2)?true:false;
+}
+
+bool PCM::CoreRemoteMemoryBWMetricAvailable()
+{
+	PCM_CPUID_INFO cpuinfo;
+	if (!(QOSMetricAvailable() & L3QOSMetricAvailable()))
+		return false;
+	pcm_cpuid(0xf, 0x1, cpuinfo);
+	return (cpuinfo.reg.edx & 4) ? true : false;
 }
 
 unsigned PCM::getMaxRMID() const
@@ -465,57 +498,64 @@ unsigned PCM::getMaxRMID() const
 	return maxRMID;
 }
 
-void PCM::initL3CacheOccupancyMonitoring()
+void PCM::initRMID()
 {
-        /* Check if the core has CacheMonitoring support */
-		if(!L3CacheOccupancyMetricAvailable())
-        {
-            return;
-        }
-
-		unsigned maxRMID;
-
-		const uint64 event = 1; //L3 Occupancy monitoring
-
-		/* Calculate maximum number of RMID supported by socket */
-		maxRMID = getMaxRMID();
-		// std::cout << "Maximum RMIDs per socket in the system : " << maxRMID << "\n";
-
-		std::vector<uint32> rmid(num_sockets);
-
-		for(int32 i = 0; i < num_sockets; ++i)
+	unsigned maxRMID;
+	/* Calculate maximum number of RMID supported by socket */
+	maxRMID = getMaxRMID();
+	// std::cout << "Maximum RMIDs per socket in the system : " << maxRMID << "\n";
+	std::vector<uint32> rmid(num_sockets);
+	for(int32 i = 0; i < num_sockets; i ++)
 			rmid[i] = maxRMID - 1;
 
-		/* Associate each core with 1 RMID */
+	/* Associate each core with 1 RMID */
+	for(int32 core = 0; core < num_cores; core ++ )
+	{
+		if(!isCoreOnline(core)) continue;
 
-		for(int32 core = 0; core < num_cores; core ++ )
-		{
-                        if(!isCoreOnline(core)) continue;
-			uint64 msr_pqr_assoc = 0 ;
-			uint64 msr_qm_evtsel = 0 ;
+		uint64 msr_pqr_assoc = 0 ;
+		uint64 msr_qm_evtsel = 0 ;
+                MSR[core]->lock();
+		//Read 0xC8F MSR for each core
+		MSR[core]->read(IA32_PQR_ASSOC, &msr_pqr_assoc);
+                //std::cout << "initRMID reading IA32_PQR_ASSOC 0x"<< std::hex << msr_pqr_assoc << std::dec << std::endl;
 
-			//Read 0xC8F MSR for each core
-			MSR[core]->read(IA32_PQR_ASSOC, &msr_pqr_assoc);
+		//std::cout << "Socket Id : " << topology[core].socket;
+		msr_pqr_assoc &= 0xffffffff00000000ULL;
+		msr_pqr_assoc |= (uint64)(rmid[topology[core].socket] & ((1ULL<<10)-1ULL));
+                //std::cout << "initRMID writing IA32_PQR_ASSOC 0x"<< std::hex << msr_pqr_assoc << std::dec << std::endl;
+		//Write 0xC8F MSR with new RMID for each core
+		MSR[core]->write(IA32_PQR_ASSOC,msr_pqr_assoc);
 
-			//std::cout << "Socket Id : " << topology[core].socket;
-			msr_pqr_assoc &= static_cast<uint64>(0xffffffff00000000ULL);
-            msr_pqr_assoc |= (static_cast<uint64>(rmid[topology[core].socket]) & static_cast<uint64>((1ULL << 10ULL) - 1ULL));
-			//Write 0xC8F MSR with new RMID for each core
-			MSR[core]->write(IA32_PQR_ASSOC,msr_pqr_assoc);
+		msr_qm_evtsel = static_cast<uint64>(rmid[topology[core].socket] & ((1ULL<<10)-1ULL));
+		msr_qm_evtsel <<= 32 ;
+		//Write 0xC8D MSR with new RMID for each core
+                //std::cout << "initRMID writing IA32_QM_EVTSEL 0x"<< std::hex << msr_qm_evtsel << std::dec << std::endl;
+		MSR[core]->write(IA32_QM_EVTSEL,msr_qm_evtsel);
+                MSR[core]->unlock();
 
-			//Write MSR 0xC8D , the event id and rmid for each core
-            msr_qm_evtsel = static_cast<uint64>(rmid[topology[core].socket]) & static_cast<uint64>((1ULL << 10) - 1ULL);
-            msr_qm_evtsel <<= static_cast<uint64>(32ULL);
-			msr_qm_evtsel |= event & ((1ULL<<8)-1ULL);
-			MSR[core]->write(IA32_QM_EVTSEL,msr_qm_evtsel);
-
-			// std::cout << "Assigning RMID " << rmid[topology[core].socket] << " to core " << core  << " on socket " << topology[core].socket << "\n";
-			rmid[topology[core].socket] --;
-		}
-
-		/* Get The scaling factor by running CPUID.0xF.0x1 instruction */
-		L3ScalingFactor = getL3ScalingFactor();
+		/* Initializing the memory bandwidth counters */
+        memory_bw_local.push_back(std::shared_ptr<CounterWidthExtender>(new CounterWidthExtender(new CounterWidthExtender::MBLCounter(MSR[core]), 24, 500)));
+        memory_bw_total.push_back(std::shared_ptr<CounterWidthExtender>(new CounterWidthExtender(new CounterWidthExtender::MBTCounter(MSR[core]), 24, 500)));
+		rmid[topology[core].socket] --;
+	}
+	/* Get The scaling factor by running CPUID.0xF.0x1 instruction */
+	L3ScalingFactor = getL3ScalingFactor();
 }
+
+void PCM::initQOSevent(const uint64 event, const int32 core)
+{
+   if(!isCoreOnline(core)) return;
+   uint64 msr_qm_evtsel = 0 ;
+   //Write 0xC8D MSR with the event id
+   MSR[core]->read(IA32_QM_EVTSEL, &msr_qm_evtsel);
+   //std::cout << "initQOSevent reading IA32_QM_EVTSEL 0x"<< std::hex << msr_qm_evtsel << std::dec << std::endl;
+   msr_qm_evtsel &= 0xfffffffffffffff0ULL;
+   msr_qm_evtsel |= event & ((1ULL<<8)-1ULL);
+   //std::cout << "initQOSevent writing IA32_QM_EVTSEL 0x"<< std::hex << msr_qm_evtsel << std::dec << std::endl;
+   MSR[core]->write(IA32_QM_EVTSEL,msr_qm_evtsel);
+}
+
 
 void PCM::initCStateSupportTables()
 {
@@ -558,6 +598,7 @@ void PCM::initCStateSupportTables()
         case HASWELL_ULT:
         case BROADWELL:
         case SKL:
+        case SKL_UY:
         case BROADWELL_XEON_E3:
             PCM_CSTATE_ARRAY(pkgCStateMsr, PCM_PARAM_PROTECT({0,    0,  0x60D,  0x3F8,      0,  0,  0x3F9,  0x3FA,  0x630,  0x631,  0x632}) );
 
@@ -594,6 +635,7 @@ void PCM::initCStateSupportTables()
         case ATOM_BAYTRAIL:
         case ATOM_AVOTON:
         case ATOM_CHERRYTRAIL:
+        case SKL_UY:
         case SKL:
             PCM_CSTATE_ARRAY(coreCStateMsr, PCM_PARAM_PROTECT({0,	0,	0,	0x3FC,	0,	0,	0x3FD,	0x3FE,	0,	0,	0}) );
         default:
@@ -1052,13 +1094,13 @@ void PCM::initEnergyMonitoring()
 	        for (i = 0; i < (int)num_sockets; ++i)
                 energy_status.push_back(
                     std::shared_ptr<CounterWidthExtender>(
-                        new CounterWidthExtender(new CounterWidthExtender::MsrHandleCounter(MSR[socketRefCore[i]], MSR_PKG_ENERGY_STATUS))));
+                        new CounterWidthExtender(new CounterWidthExtender::MsrHandleCounter(MSR[socketRefCore[i]], MSR_PKG_ENERGY_STATUS), 32, 10000)));
 
         if(dramEnergyMetricsAvailable() && dram_energy_status.empty())
             for (i = 0; i < (int)num_sockets; ++i)
                 dram_energy_status.push_back(
                     std::shared_ptr<CounterWidthExtender>(
-                        new CounterWidthExtender(new CounterWidthExtender::MsrHandleCounter(MSR[socketRefCore[i]], MSR_DRAM_ENERGY_STATUS))));
+                    new CounterWidthExtender(new CounterWidthExtender::MsrHandleCounter(MSR[socketRefCore[i]], MSR_DRAM_ENERGY_STATUS), 32, 10000)));
     }
 }
 
@@ -1094,11 +1136,11 @@ void PCM::initUncoreObjects()
        {
            clientBW = std::shared_ptr<ClientBW>(new ClientBW());
            clientImcReads = std::shared_ptr<CounterWidthExtender>(
-               new CounterWidthExtender(new CounterWidthExtender::ClientImcReadsCounter(clientBW)));
+               new CounterWidthExtender(new CounterWidthExtender::ClientImcReadsCounter(clientBW), 32, 10000));
            clientImcWrites = std::shared_ptr<CounterWidthExtender>(
-               new CounterWidthExtender(new CounterWidthExtender::ClientImcWritesCounter(clientBW)));
+               new CounterWidthExtender(new CounterWidthExtender::ClientImcWritesCounter(clientBW), 32, 10000));
            clientIoRequests = std::shared_ptr<CounterWidthExtender>(
-               new CounterWidthExtender(new CounterWidthExtender::ClientIoRequestsCounter(clientBW)));
+               new CounterWidthExtender(new CounterWidthExtender::ClientIoRequestsCounter(clientBW), 32, 10000));
 
        } catch(...)
        {
@@ -1254,8 +1296,8 @@ PCM::PCM() :
 
     initUncoreObjects();
 
-    // Initialize L3 Cache Occupancy Monitoring
-    initL3CacheOccupancyMonitoring();
+    // Initialize RMID to the cores for QOS monitoring
+    initRMID();
 
 #ifdef PCM_USE_PERF
     canUsePerf = true;
@@ -1326,6 +1368,7 @@ bool PCM::checkModel()
     }
     if (cpu_model == HASWELL_ULT || cpu_model == HASWELL_2) cpu_model = HASWELL;
     if (cpu_model == BROADWELL_XEON_E3) cpu_model = BROADWELL;
+    if (cpu_model == SKL_UY) cpu_model = SKL;
 
     if(!isCPUModelSupported((int)cpu_model))
     {
@@ -1823,7 +1866,7 @@ void PCM::reportQPISpeed() const
           if(server_pcicfg_uncore[i].get()) server_pcicfg_uncore[i]->reportQPISpeed();
        }
     } else {
-          std::cerr << "Max QPI speed: " << max_qpi_speed / (1e9) << " GBytes/second (" << max_qpi_speed / (2e9) << " GT/second)" << std::endl;
+          std::cerr << "Max QPI speed: " << max_qpi_speed / (1e9) << " GBytes/second (" << max_qpi_speed / (1e9*double(DATA_BYTES_PER_QPI_CYCLE)) << " GT/second)" << std::endl;
     }
 
 }
@@ -2304,8 +2347,8 @@ void PCM::resetPMU()
 }
 void PCM::freeRMID()
 {
-    if(!L3CacheOccupancyMetricAvailable()) {
-        return;
+    if(!(QOSMetricAvailable()&L3QOSMetricAvailable())) {
+	return;
     }
 
 	for(int32 core = 0; core < num_cores; core ++ )
@@ -2615,7 +2658,8 @@ void BasicCounterState::readAndAggregate(std::shared_ptr<SafeMsrHandle> msr)
     uint64 cCStateResidency[PCM::MAX_C_STATE + 1];
     memset(cCStateResidency, 0, sizeof(cCStateResidency));
     uint64 thermStatus = 0;
-    TemporalThreadAffinity tempThreadAffinity(msr->getCoreId()); // speedup trick for Linux
+    const int32 core_id = msr->getCoreId();
+    TemporalThreadAffinity tempThreadAffinity(core_id); // speedup trick for Linux
 
     PCM * m = PCM::getInstance();
     uint32 cpu_model = m->getCPUModel();
@@ -2670,7 +2714,16 @@ void BasicCounterState::readAndAggregate(std::shared_ptr<SafeMsrHandle> msr)
 
     // std::cout << "DEBUG1: "<< msr->getCoreId() << " " << cInstRetiredAny<< " "<< std::endl;
     if(m->L3CacheOccupancyMetricAvailable())
-     	msr->read(IA32_QM_CTR,&cL3Occupancy);
+    {
+    	msr->lock();
+    	uint64 event = 1;
+        m->initQOSevent(event, core_id);
+    	msr->read(IA32_QM_CTR,&cL3Occupancy);
+        //std::cout << "readAndAggregate reading IA32_QM_CTR "<< std::dec << cL3Occupancy << std::dec << std::endl;
+    	msr->unlock();
+    }
+
+    m->readAndAggregateMemoryBWCounters(static_cast<uint32>(core_id), *this);
 
     if(cpu_model != PCM::ATOM ||  m->getOriginalCPUModel() == PCM::ATOM_AVOTON) msr->read(IA32_TIME_STAMP_COUNTER, &cInvariantTSC);
     else
@@ -2698,8 +2751,8 @@ void BasicCounterState::readAndAggregate(std::shared_ptr<SafeMsrHandle> msr)
     L3Miss += m->extractCoreGenCounterValue(cL3Miss);
     L3UnsharedHit += m->extractCoreGenCounterValue(cL3UnsharedHit);
     //std::cout << "Scaling Factor " << m->L3ScalingFactor;
-    cL3Occupancy = m->extractL3CacheOccupancy(cL3Occupancy);
-    L3Occupancy = (cL3Occupancy==PCM_INVALID_L3_CACHE_OCCUPANCY)? PCM_INVALID_L3_CACHE_OCCUPANCY : (uint64)((double)(cL3Occupancy * m->L3ScalingFactor) / 1024.0);
+    cL3Occupancy = m->extractQOSMonitoring(cL3Occupancy);
+    L3Occupancy = (cL3Occupancy==PCM_INVALID_QOS_MONITORING_DATA)? PCM_INVALID_QOS_MONITORING_DATA : (uint64)((double)(cL3Occupancy * m->L3ScalingFactor) / 1024.0);
     L2HitM += m->extractCoreGenCounterValue(cL2HitM);
     L2Hit += m->extractCoreGenCounterValue(cL2Hit);
     InvariantTSC += cInvariantTSC;
@@ -2936,6 +2989,35 @@ SystemCounterState PCM::getSystemCounterState()
 }
 
 template <class CounterStateType>
+void PCM::readAndAggregateMemoryBWCounters(const uint32 core, CounterStateType & result)
+{
+	 uint64 cMemoryBWLocal = 0;
+	 uint64 cMemoryBWTotal = 0;
+
+	 if(core < memory_bw_local.size())
+	 {
+		 cMemoryBWLocal = memory_bw_local[core]->read();
+		 cMemoryBWLocal = extractQOSMonitoring(cMemoryBWLocal);
+                 //std::cout << "Read MemoryBWLocal "<< cMemoryBWLocal << std::endl;
+                 if(cMemoryBWLocal==PCM_INVALID_QOS_MONITORING_DATA)
+                     result.MemoryBWLocal = PCM_INVALID_QOS_MONITORING_DATA; // do not accumulate invalid reading
+                 else
+		     result.MemoryBWLocal += (uint64)((double)(cMemoryBWLocal * L3ScalingFactor) / (1024.0 * 1024.0));
+	 }
+	 if(core < memory_bw_total.size())
+	 {
+		 cMemoryBWTotal = memory_bw_total[core]->read();
+		 cMemoryBWTotal = extractQOSMonitoring(cMemoryBWTotal);
+                 //std::cout << "Read MemoryBWTotal "<< cMemoryBWTotal << std::endl;
+                 if(cMemoryBWTotal==PCM_INVALID_QOS_MONITORING_DATA)
+                     result.MemoryBWTotal = PCM_INVALID_QOS_MONITORING_DATA; // do not accumulate invalid reading
+                 else
+                     result.MemoryBWTotal  += (uint64)((double)(cMemoryBWTotal * L3ScalingFactor) / (1024.0 * 1024.0));
+	 }
+
+}
+
+template <class CounterStateType>
 void PCM::readAndAggregateUncoreMCCounters(const uint32 socket, CounterStateType & result)
 {
     if (hasPCICFGUncore())
@@ -3123,7 +3205,7 @@ void PCM::readQPICounters(SystemCounterState & result)
                     server_pcicfg_uncore[s]->freezeCounters();
                     for (uint32 port = 0; port < (uint32)getQPILinksPerSocket(); ++port)
 		            {
-                        result.incomingQPIPackets[s][port] = server_pcicfg_uncore[s]->getIncomingDataFlits(port) / 8;
+                        result.incomingQPIPackets[s][port] = server_pcicfg_uncore[s]->getIncomingDataFlits(port) / (64/DATA_BYTES_PER_QPI_FLIT);
 			            result.outgoingQPIDataNonDataFlits[s][port] = server_pcicfg_uncore[s]->getOutgoingDataNonDataFlits(port);
 		            }
                     server_pcicfg_uncore[s]->unfreezeCounters();
@@ -4140,11 +4222,7 @@ void * WatchDogProc(void * state)
     CounterWidthExtender * ext = (CounterWidthExtender * ) state;
     while(1)
     {
-#ifdef _MSC_VER
-		Sleep(10000);
-#else
-        sleep(10);
-#endif
+        MySleepMs(static_cast<int>(ext->watchdog_delay_ms));
         /* uint64 dummy = */ ext->read();
     }
     return NULL;

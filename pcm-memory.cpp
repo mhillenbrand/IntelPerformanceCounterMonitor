@@ -671,7 +671,7 @@ int main(int argc, char * argv[])
     BeforeTime = m->getTickCount();
 
     if( sysCmd != NULL ) {
-        MySystem(sysCmd, sysArgv); delay = 0;
+        MySystem(sysCmd, sysArgv);
     }
 
     while(1)
