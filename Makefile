@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2009-2014 Intel Corporation
+# Copyright (c) 2009-2015 Intel Corporation
 # written by Roman Dementiev and Jim Harris
 #
 
@@ -11,7 +11,7 @@ klocwork: $(EXE)
 
 CXXFLAGS += -Wall -g -O3 -Wno-unknown-pragmas -Werror
 
-# uncomment if you want to rely on Linux perf support (user needs CAP_SYS_ADMIN privileges)
+# rely on Linux perf support (user needs CAP_SYS_ADMIN privileges), comment out to disable
 ifneq ($(wildcard /usr/include/linux/perf_event.h),)
 CXXFLAGS += -DPCM_USE_PERF
 endif

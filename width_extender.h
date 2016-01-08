@@ -32,15 +32,17 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 #include "mutex.h"
 #include <memory>
 
+
 #ifdef _MSC_VER
-DWORD WINAPI WatchDogProc(LPVOID state);
+    DWORD WINAPI WatchDogProc(LPVOID state);
 #else
-void * WatchDogProc(void * state);
+    void * WatchDogProc(void * state);
 #endif
 
 class CounterWidthExtender
 {
 public:
+
    struct AbstractRawCounter
    {
        virtual uint64 operator() () = 0;
@@ -88,26 +90,42 @@ public:
        uint64 operator() ()
        {
            msr->lock();
-           msr->write(IA32_QM_EVTSEL, 0xdead); // TODO: change 0xdead to MBL event value
-           uint64 value = 0;
-           msr->read(IA32_PQR_ASSOC, &value);
+           uint64 event = 3; // L3 Local External Bandwidth
+           uint64 msr_qm_evtsel = 0, value = 0 ;
+           msr->read(IA32_QM_EVTSEL, &msr_qm_evtsel);
+           //std::cout << "MBLCounter reading IA32_QM_EVTSEL 0x"<< std::hex << msr_qm_evtsel << std::dec << std::endl; 
+           msr_qm_evtsel &= 0xfffffffffffffff0ULL;
+           msr_qm_evtsel |= event & ((1ULL<<8)-1ULL);
+           //std::cout << "MBL event " << msr_qm_evtsel << "\n";
+           //std::cout << "MBLCounter writing IA32_QM_EVTSEL 0x"<< std::hex << msr_qm_evtsel << std::dec << std::endl;
+           msr->write(IA32_QM_EVTSEL,msr_qm_evtsel );
+           msr->read(IA32_QM_CTR, &value);
+           //std::cout << "MBLCounter reading IA32_QM_CTR "<< std::dec << value << std::dec << std::endl;
            msr->unlock();
            return value;
        }
    };
 
-   struct MBRCounter : public AbstractRawCounter
+   struct MBTCounter : public AbstractRawCounter
    {
-       SafeMsrHandle * msr;
-       MBRCounter(SafeMsrHandle * msr_) : msr(msr_){}
+       std::shared_ptr<SafeMsrHandle> msr;
+       MBTCounter(std::shared_ptr<SafeMsrHandle> msr_) : msr(msr_){}
        uint64 operator() ()
        {
-           msr->lock();
-           msr->write(IA32_QM_EVTSEL, 0xdead); // TODO: change 0xdead to MBR event value
-           uint64 value = 0;
-           msr->read(IA32_PQR_ASSOC, &value);
-           msr->unlock();
-           return value;
+    	  msr->lock();
+		  uint64 event = 2; // L3 Total External Bandwidth
+		  uint64 msr_qm_evtsel = 0, value = 0 ;
+		  msr->read(IA32_QM_EVTSEL, &msr_qm_evtsel);
+                  //std::cout << "MBTCounter reading IA32_QM_EVTSEL 0x"<< std::hex << msr_qm_evtsel << std::dec << std::endl;
+		  msr_qm_evtsel &= 0xfffffffffffffff0ULL;
+		  msr_qm_evtsel |= event & ((1ULL<<8)-1ULL);
+		  //std::cout << "MBR event " << msr_qm_evtsel << "\n";
+                  //std::cout << "MBTCounter writing IA32_QM_EVTSEL 0x"<< std::hex << msr_qm_evtsel << std::dec << std::endl;
+		  msr->write(IA32_QM_EVTSEL,msr_qm_evtsel );
+		  msr->read(IA32_QM_CTR, &value);
+                  //std::cout << "MBTCounter reading IA32_QM_CTR "<< std::dec << value << std::dec << std::endl;
+		  msr->unlock();
+		  return value;
        }
    };
 
@@ -124,10 +142,13 @@ private:
     AbstractRawCounter * raw_counter;
     uint64 extended_value;
     uint64 last_raw_value;
+    uint64 counter_width;
+    uint32 watchdog_delay_ms;
 
     CounterWidthExtender(); // forbidden
     CounterWidthExtender(CounterWidthExtender&); // forbidden
     CounterWidthExtender & operator = (const CounterWidthExtender &); // forbidden
+
 
     uint64 internal_read()
     {
@@ -137,7 +158,7 @@ private:
          new_raw_value = (*raw_counter)();
 	 if(new_raw_value < last_raw_value)
          {
-                extended_value += ((1ULL<<32ULL)-last_raw_value) + new_raw_value;
+                extended_value += ((1ULL<<counter_width)-last_raw_value) + new_raw_value;
          }
 	 else
 	 {
@@ -153,11 +174,18 @@ private:
     }
 
 public:
-    CounterWidthExtender(AbstractRawCounter * raw_counter_): raw_counter(raw_counter_) 
-    {
-        last_raw_value = (*raw_counter)();
-        extended_value = last_raw_value;
 
+#ifdef _MSC_VER
+    friend DWORD WINAPI WatchDogProc(LPVOID state);
+#else
+    friend void * WatchDogProc(void * state);
+#endif
+    CounterWidthExtender(AbstractRawCounter * raw_counter_, uint64 counter_width_, uint32 watchdog_delay_ms_): raw_counter(raw_counter_),counter_width(counter_width_),watchdog_delay_ms(watchdog_delay_ms_)
+    {
+
+    	last_raw_value = (*raw_counter)();
+        extended_value = last_raw_value;
+        //std::cout << "Initial Value " << extended_value << "\n";
 #ifdef _MSC_VER
 		UpdateThread = CreateThread(NULL,0,(LPTHREAD_START_ROUTINE)WatchDogProc,this,0,NULL);
 #else

@@ -284,7 +284,7 @@ typedef int32_t  int32;
 #define IA32_QM_EVTSEL (0xc8d)
 #define IA32_QM_CTR (0xc8e)
 
-#define PCM_INVALID_L3_CACHE_OCCUPANCY ((std::numeric_limits<uint64>::max)())
+#define PCM_INVALID_QOS_MONITORING_DATA ((std::numeric_limits<uint64>::max)())
 
 /* \brief Event Select Register format
 
@@ -476,6 +476,13 @@ struct BecktonUncorePMUCNTCTLRegister
 
 #define PCM_INTEL_PCI_VENDOR_ID (0x8086)
 #define PCM_PCI_VENDOR_ID_OFFSET (0)
+
+// 8 bytes per  QPI flit
+// 4 QPI cycles per QPI flit
+
+#define DATA_BYTES_PER_QPI_FLIT (8)
+#define QPI_CYCLES_PER_QPI_FLIT (4)
+#define DATA_BYTES_PER_QPI_CYCLE (DATA_BYTES_PER_QPI_FLIT/QPI_CYCLES_PER_QPI_FLIT)
 
 // server PCICFG uncore counters
 
