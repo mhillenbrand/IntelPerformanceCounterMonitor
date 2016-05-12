@@ -52,7 +52,7 @@ using namespace std;
 template <class IntType>
 double float_format(IntType n)
 {
-    return double(n) / 1024 / 1024;
+    return double(n) / 1e6;
 }
 
 std::string temp_format(int32 t)
@@ -391,10 +391,10 @@ void print_output(PCM * m,
         {
                 cout << " SKT  " << setw(2) << i;
                 if (m->memoryTrafficMetricsAvailable())
-                    cout << "    " << setw(5) << getBytesReadFromMC(sktstate1[i], sktstate2[i]) / double(1024ULL * 1024ULL * 1024ULL) <<
-                            "    " << setw(5) << getBytesWrittenToMC(sktstate1[i], sktstate2[i]) / double(1024ULL * 1024ULL * 1024ULL);
+                    cout << "    " << setw(5) << getBytesReadFromMC(sktstate1[i], sktstate2[i]) / double(1e9) <<
+                            "    " << setw(5) << getBytesWrittenToMC(sktstate1[i], sktstate2[i]) / double(1e9);
                 if (m->memoryIOTrafficMetricAvailable())
-                    cout << "    " << setw(5) << getIORequestBytesFromMC(sktstate1[i], sktstate2[i]) / double(1024ULL * 1024ULL * 1024ULL);
+                    cout << "    " << setw(5) << getIORequestBytesFromMC(sktstate1[i], sktstate2[i]) / double(1e9);
                 cout << "     ";
                 if(m->packageEnergyMetricsAvailable()) {
                   cout << setw(6) << getConsumedJoules(sktstate1[i], sktstate2[i]);
@@ -409,10 +409,10 @@ void print_output(PCM * m,
         if (m->getNumSockets() > 1) {
             cout << "       *";
             if (m->memoryTrafficMetricsAvailable())
-                cout << "    " << setw(5) << getBytesReadFromMC(sstate1, sstate2) / double(1024ULL * 1024ULL * 1024ULL) <<
-                        "    " << setw(5) << getBytesWrittenToMC(sstate1, sstate2) / double(1024ULL * 1024ULL * 1024ULL);
+                cout << "    " << setw(5) << getBytesReadFromMC(sstate1, sstate2) / double(1e9) <<
+                        "    " << setw(5) << getBytesWrittenToMC(sstate1, sstate2) / double(1e9);
             if (m->memoryIOTrafficMetricAvailable())
-                cout << "    " << setw(5) << getIORequestBytesFromMC(sstate1, sstate2) / double(1024ULL * 1024ULL * 1024ULL);
+                cout << "    " << setw(5) << getIORequestBytesFromMC(sstate1, sstate2) / double(1e9);
             cout << "     ";
             if (m->packageEnergyMetricsAvailable()) {
                 cout << setw(6) << getConsumedJoules(sstate1, sstate2);
@@ -440,24 +440,22 @@ void print_csv_header(PCM * m,
     {
         if (cpu_model != PCM::ATOM)
             {
-				cout << ";;;;;;;;;;;;";
-				if (m->L3CacheOccupancyMetricAvailable())
-            		cout << ";";
-				if (m->CoreLocalMemoryBWMetricAvailable())
-					cout << ";";
-				if (m->CoreLocalMemoryBWMetricAvailable())
-					cout << ";";
-            		
+                cout << ";;;;;;;;;;";
+                if (m->memoryTrafficMetricsAvailable())
+                   cout << ";;";
             }
         else
             cout << ";;;;;";
 
 
         cout << ";;;;;;;";
-        if (m->getNumSockets() > 1) // QPI info only for multi socket systems
-            cout << ";;";
-        if (m->qpiUtilizationMetricsAvailable())
-            cout << ";";
+        if (m->getNumSockets() > 1) { // QPI info only for multi socket systems
+            if (m->incomingQPITrafficMetricsAvailable())
+                cout << ";;";
+            if (m->outgoingQPITrafficMetricsAvailable())
+                cout << ";";
+        }
+
         cout << "System Core C-States";
         for (int s = 0; s <= PCM::MAX_C_STATE; ++s)
         if (m->isCoreCStateResidencySupported(s))
@@ -481,14 +479,21 @@ void print_csv_header(PCM * m,
 						cout << "Socket" << i << ";;;;;;;";
 				else
 				{
+                                        cout << "Socket" <<  i << ";;;;;;;;;;;";
+ 
 					if (m->L3CacheOccupancyMetricAvailable())
-						cout << "Socket" <<  i << ";;;;;;;;;;;;;;";
-					else
-						cout << "Socket" <<  i << ";;;;;;;;;;;;;";
+						cout << ";";
+                                        if (m->CoreLocalMemoryBWMetricAvailable())
+                                                cout << ";";
+                                        if (m->CoreRemoteMemoryBWMetricAvailable())
+                                                cout << ";";
+                                        if (m->memoryTrafficMetricsAvailable())
+                                                 cout << ";;";
+ 
 				}
              }
 
-        if (m->getNumSockets() > 1) // QPI info only for multi socket systems
+        if (m->getNumSockets() > 1 && (m->incomingQPITrafficMetricsAvailable())) // QPI info only for multi socket systems
         {
             const uint32 qpiLinks = (uint32)m->getQPILinksPerSocket();
 
@@ -554,12 +559,21 @@ void print_csv_header(PCM * m,
         {
 			if (cpu_model == PCM::ATOM)
 				cout << "Core" << i << " (Socket" << setw(2) << m->getSocketId(i) << ");;;;;";
-			else
-				cout << "Core" << i << " (Socket" << setw(2) << m->getSocketId(i) << ");;;;;;;;;;;";
+			else {
 
+				cout << "Core" << i << " (Socket" << setw(2) << m->getSocketId(i) << ");;;;;;;;;;";
+            if (m->L3CacheOccupancyMetricAvailable())
+                cout << ';' ;
+            if (m->CoreLocalMemoryBWMetricAvailable())
+                cout << ';' ;
+            if (m->CoreRemoteMemoryBWMetricAvailable())
+                cout << ';' ;
+                 }
             for (int s = 0; s <= PCM::MAX_C_STATE; ++s)
             if (m->isCoreCStateResidencySupported(s))
                 cout << ";";
+            cout << ";"; // TEMP
+ 
         }
     }
 
@@ -570,14 +584,8 @@ void print_csv_header(PCM * m,
         if (cpu_model != PCM::ATOM)
         {
 		cout << "EXEC;IPC;FREQ;AFREQ;L3MISS;L2MISS;L3HIT;L2HIT;L3MPI;L2MPI;";
-            	if (m->L3CacheOccupancyMetricAvailable())
-                    cout << "L3OCC;";
-        	if (m->CoreLocalMemoryBWMetricAvailable())
-            	cout << "LMB";
-			if (m->CoreRemoteMemoryBWMetricAvailable())
-				cout << "RMB;";
-
-		cout << "READ;WRITE;";
+                if (m->memoryTrafficMetricsAvailable())
+		   cout << "READ;WRITE;";
 	}
         else
         {
@@ -586,10 +594,13 @@ void print_csv_header(PCM * m,
 
 
         cout << "INST;ACYC;TIME(ticks);PhysIPC;PhysIPC%;INSTnom;INSTnom%;";
-        if (m->getNumSockets() > 1) // QPI info only for multi socket systems
-            cout << "TotalQPIin;QPItoMC;";
-        if (m->outgoingQPITrafficMetricsAvailable())
-            cout << "TotalQPIout;";
+        if (m->getNumSockets() > 1) { // QPI info only for multi socket systems
+            if (m->incomingQPITrafficMetricsAvailable())
+                cout << "TotalQPIin;QPItoMC;";
+            if (m->outgoingQPITrafficMetricsAvailable())
+                cout << "TotalQPIout;";
+        }
+
 
         for (int s = 0; s <= PCM::MAX_C_STATE; ++s)
         if (m->isCoreCStateResidencySupported(s))
@@ -619,14 +630,16 @@ void print_csv_header(PCM * m,
 					if (m->L3CacheOccupancyMetricAvailable())
 						cout << "L3OCC;";
 					if (m->CoreLocalMemoryBWMetricAvailable())
-						cout << "LMB";
+						cout << "LMB;";
 					if (m->CoreRemoteMemoryBWMetricAvailable())
 						cout << "RMB;";
-					cout << "READ;WRITE;TEMP;";
+ 					if (m->memoryTrafficMetricsAvailable())
+ 						cout << "READ;WRITE;";
+					cout << "TEMP;";
 				}
             }
 
-        if (m->getNumSockets() > 1) // QPI info only for multi socket systems
+        if (m->getNumSockets() > 1 && (m->incomingQPITrafficMetricsAvailable())) // QPI info only for multi socket systems
         {
             const uint32 qpiLinks = (uint32)m->getQPILinksPerSocket();
 
@@ -692,10 +705,9 @@ void print_csv_header(PCM * m,
 					if (m->L3CacheOccupancyMetricAvailable())
 						cout << "L3OCC;";
 					if (m->CoreLocalMemoryBWMetricAvailable())
-						cout << "LMB";
+						cout << "LMB;";
 					if (m->CoreRemoteMemoryBWMetricAvailable())
 						cout << "RMB;";
-					cout << "READ;WRITE;TEMP;";
 				}
 
 
@@ -756,17 +768,9 @@ void print_csv(PCM * m,
                 ';' << getL2CacheHitRatio(sstate1, sstate2) <<
                 ';' << double(getL3CacheMisses(sstate1, sstate2)) / getInstructionsRetired(sstate1, sstate2) <<
                 ';' << double(getL2CacheMisses(sstate1, sstate2)) / getInstructionsRetired(sstate1, sstate2) << ";";
-            if (m->L3CacheOccupancyMetricAvailable())
-                cout << "N/A;";
-	    if(m->CoreLocalMemoryBWMetricAvailable())
-            	cout << "N/A";
-		if (m->CoreRemoteMemoryBWMetricAvailable())
-			cout << "N/A;";
-            if (!(m->memoryTrafficMetricsAvailable()))
-                cout << "N/A;N/A;";
-            else
-                cout << getBytesReadFromMC(sstate1, sstate2) / double(1024ULL * 1024ULL * 1024ULL) <<
-                ';' << getBytesWrittenToMC(sstate1, sstate2) / double(1024ULL * 1024ULL * 1024ULL) << ';';
+            if (m->memoryTrafficMetricsAvailable())
+                cout << getBytesReadFromMC(sstate1, sstate2) / double(1e9) <<
+                ';' << getBytesWrittenToMC(sstate1, sstate2) / double(1e9) << ';';
         }
         else
             cout << getExecUsage(sstate1, sstate2) <<
@@ -784,11 +788,14 @@ void print_csv(PCM * m,
             << getTotalExecUsage(sstate1, sstate2) << ";"
             << 100. * (getTotalExecUsage(sstate1, sstate2) / double(m->getMaxIPC())) << ";";
 
-        if (m->getNumSockets() > 1) // QPI info only for multi socket systems
-            cout << float_format(getAllIncomingQPILinkBytes(sstate1, sstate2)) << ";"
-            << getQPItoMCTrafficRatio(sstate1, sstate2) << ";";
-        if (m->outgoingQPITrafficMetricsAvailable())
-            cout << float_format(getAllOutgoingQPILinkBytes(sstate1, sstate2)) << ";";
+        if (m->getNumSockets() > 1) { // QPI info only for multi socket systems
+            if (m->incomingQPITrafficMetricsAvailable())
+               cout << float_format(getAllIncomingQPILinkBytes(sstate1, sstate2)) << ";"
+                    << getQPItoMCTrafficRatio(sstate1, sstate2) << ";";
+            if (m->outgoingQPITrafficMetricsAvailable())
+               cout << float_format(getAllOutgoingQPILinkBytes(sstate1, sstate2)) << ";";
+        }
+
 
         for (int s = 0; s <= PCM::MAX_C_STATE; ++s)
         if (m->isCoreCStateResidencySupported(s))
@@ -833,16 +840,14 @@ void print_csv(PCM * m,
 					cout << ';' << getLocalMemoryBW(sktstate1[i], sktstate2[i]);
 				if (m->CoreRemoteMemoryBWMetricAvailable())
                 	cout << ';' << getRemoteMemoryBW(sktstate1[i], sktstate2[i]) ;
-		if (!(m->memoryTrafficMetricsAvailable()))
-                    cout << ";N/A;N/A";
-                else
-                    cout << ';' << getBytesReadFromMC(sktstate1[i], sktstate2[i]) / double(1024ULL * 1024ULL * 1024ULL) <<
-                    ';' << getBytesWrittenToMC(sktstate1[i], sktstate2[i]) / double(1024ULL * 1024ULL * 1024ULL);
+		if (m->memoryTrafficMetricsAvailable())
+                    cout << ';' << getBytesReadFromMC(sktstate1[i], sktstate2[i]) / double(1e9) <<
+                    ';' << getBytesWrittenToMC(sktstate1[i], sktstate2[i]) / double(1e9);
                 cout << ';' << temp_format(sktstate2[i].getThermalHeadroom()) << ';';
             }
         }
 
-        if (m->getNumSockets() > 1) // QPI info only for multi socket systems
+        if (m->getNumSockets() > 1 && (m->incomingQPITrafficMetricsAvailable())) // QPI info only for multi socket systems
         {
             const uint32 qpiLinks = (uint32)m->getQPILinksPerSocket();
             for (uint32 i = 0; i < m->getNumSockets(); ++i)
@@ -925,7 +930,6 @@ void print_csv(PCM * m,
                 ';' << getRelativeFrequency(cstates1[i], cstates2[i]) <<
                 ';' << float_format(getL2CacheMisses(cstates1[i], cstates2[i])) <<
                 ';' << getL2CacheHitRatio(cstates1[i], cstates2[i]) <<
-                ';' << temp_format(cstates2[i].getThermalHeadroom()) <<
                 ';';
 
             for (int s = 0; s <= PCM::MAX_C_STATE; ++s)
@@ -1009,14 +1013,14 @@ int main(int argc, char * argv[])
                 std::getline(ss, s, ',');
                 if(s.empty())
                     continue;
-                core_id = std::atoi(s.c_str());
+                core_id = atoi(s.c_str());
                 if(core_id > MAX_CORES)
                 {
                     cerr << "Core ID:" << core_id << " exceed maximum range " << MAX_CORES << ", program abort" << endl;
                     exit(EXIT_FAILURE);
                 }
 
-                ycores.set(std::atoi(s.c_str()),true);
+                ycores.set(atoi(s.c_str()),true);
             }
             if(m->getNumCores() > MAX_CORES)
             {

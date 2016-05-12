@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -19,7 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{66458306-D903-4946-AB5D-AE452DC8B50B}</ProjectGuid>
+    <ProjectGuid>{D919CF99-5D9F-46C9-B6F0-626700E63592}</ProjectGuid>
     <RootNamespace>pcm-memory-win</RootNamespace>
     <Keyword>Win32Proj</Keyword>
   </PropertyGroup>

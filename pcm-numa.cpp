@@ -192,6 +192,7 @@ int main(int argc, char * argv[])
             conf.OffcoreResponseMsrValue[1] = 0x7ff800000 | 0x08FFF ; // OFFCORE_RESPONSE.*.REMOTE_DRAM 
             break;
         case PCM::HASWELLX:
+        case PCM::BDX:
             conf.OffcoreResponseMsrValue[0] = 0x600400000 | 0x08FFF ; // OFFCORE_RESPONSE.*.LOCAL_DRAM
             conf.OffcoreResponseMsrValue[1] = 0x67f800000 | 0x08FFF ; // OFFCORE_RESPONSE.*.REMOTE_DRAM
             break;

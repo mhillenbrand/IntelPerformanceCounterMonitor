@@ -105,6 +105,14 @@ public:
         return m->getSocketId(c);
     }
 
+    template <typename T, T func(CoreCounterState const &)>
+    T get(uint32 core)
+    {
+	pthread_mutex_lock(&CounterMutex);
+	T value = func(cstates2[core]);
+	pthread_mutex_unlock(&CounterMutex);
+	return value;
+    }
     template <typename T, T func(CoreCounterState const &, CoreCounterState const &)>
     T get(uint32 core)
     {
@@ -119,6 +127,15 @@ public:
     {
         pthread_mutex_lock(&CounterMutex);
         T value = func(param, cstates1[core], cstates2[core]);
+        pthread_mutex_unlock(&CounterMutex);
+        return value;
+    }
+
+    template <typename T, T func(SocketCounterState const &)>
+    T getSocket(uint32 socket)
+    {
+        pthread_mutex_lock(&CounterMutex);
+        T value = func(skstates2[socket]);
         pthread_mutex_unlock(&CounterMutex);
         return value;
     }

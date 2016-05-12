@@ -71,7 +71,7 @@ uint32 num_events = (sizeof(PCIeEvents_t)/sizeof(uint64));
 using namespace std;
 
 const uint32 max_sockets = 4;
-void getPCIeEvents(PCM *m, PCM::CBoxOpcode opcode, uint32 delay_ms, sample_t *sample, const uint32 tid=0);
+void getPCIeEvents(PCM *m, PCM::PCIeEventCode opcode, uint32 delay_ms, sample_t *sample, const uint32 tid=0);
 
 void print_events()
 {
@@ -303,7 +303,7 @@ int main(int argc, char * argv[])
         memset(sample,0,sizeof(sample));
         memset(&aggregate_sample,0,sizeof(aggregate_sample));
         
-        if(m->getCPUModel() == PCM::HASWELLX || m->getCPUModel() == PCM::BDX_DE) // Haswell Server
+        if(m->getCPUModel() == PCM::HASWELLX || m->getCPUModel() == PCM::BDX_DE || m->getCPUModel() == PCM::BDX)
         {
             for(i=0;i<NUM_SAMPLES;i++)
             {
@@ -608,7 +608,7 @@ int main(int argc, char * argv[])
         memset(sample,0,sizeof(sample));
         memset(&aggregate_sample,0,sizeof(aggregate_sample));
         
-        if(m->getCPUModel() == PCM::HASWELLX || m->getCPUModel() == PCM::BDX_DE) // Haswell Server
+        if(m->getCPUModel() == PCM::HASWELLX || m->getCPUModel() == PCM::BDX_DE || m->getCPUModel() == PCM::BDX)
         {
             for(i=0;i<NUM_SAMPLES;i++)
             {
@@ -785,7 +785,7 @@ int main(int argc, char * argv[])
     exit(EXIT_SUCCESS);
 }
 
-void getPCIeEvents(PCM *m, PCM::CBoxOpcode opcode, uint32 delay_ms, sample_t *sample, const uint32 tid)
+void getPCIeEvents(PCM *m, PCM::PCIeEventCode opcode, uint32 delay_ms, sample_t *sample, const uint32 tid)
 {
     PCIeCounterState * before = new PCIeCounterState[m->getNumSockets()];
     PCIeCounterState * after = new PCIeCounterState[m->getNumSockets()];
@@ -889,8 +889,6 @@ void getPCIeEvents(PCM *m, PCM::CBoxOpcode opcode, uint32 delay_ms, sample_t *sa
                 sample[i].hit.DRd += (sample[i].total.DRd > sample[i].miss.DRd) ? sample[i].total.DRd - sample[i].miss.DRd : 0;
                 aggregate_sample.DRd += sample[i].total.DRd;
                 break;
-	    default: // other CBox opcodes not used in this utility.
-		break;
         }
     }
 

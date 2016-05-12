@@ -3,13 +3,13 @@
 # written by Roman Dementiev and Jim Harris
 #
 
-EXE = pcm-numa.x pcm-power.x pcm.x pcm-sensor.x pcm-msr.x pcm-memory.x pcm-tsx.x pcm-pcie.x pcm-core.x pcm-llc.x
+EXE = pcm-numa.x pcm-power.x pcm.x pcm-sensor.x pcm-msr.x pcm-memory.x pcm-tsx.x pcm-pcie.x pcm-core.x
 
 all: $(EXE)
 
 klocwork: $(EXE)
 
-CXXFLAGS += -Wall -g -O3 -Wno-unknown-pragmas -Werror
+CXXFLAGS += -Wall -g -O3 -Wno-unknown-pragmas
 
 # rely on Linux perf support (user needs CAP_SYS_ADMIN privileges), comment out to disable
 ifneq ($(wildcard /usr/include/linux/perf_event.h),)

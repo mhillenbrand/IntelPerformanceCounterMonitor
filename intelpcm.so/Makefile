@@ -1,16 +1,13 @@
 # Copyright (c) 2014 Intel Corporation
 
-all: libintelpcm.so libintelpcm.a
+all: libintelpcm.so
 
 OPT= -g -O3
-CXXFLAGS+= -Wall -fPIC $(OPT) -I../
+CXXFLAGS+= -Wall -fPIC $(OPT) -std=c++0x
 vpath %.cpp ..
 
-libintelpcm.so: msr.o cpucounters.o pci.o client_bw.o utils.o c_wrap_intelpcm.o
+libintelpcm.so: msr.o cpucounters.o pci.o client_bw.o utils.o
 	$(CXX) $(CXXFLAGS) -shared $^ -lpthread -o $@
-
-libintelpcm.a: $(OBJS)
-	ar rcs $@ $^
 
 clean:
 	rm -rf *.x *.o *~ *.so

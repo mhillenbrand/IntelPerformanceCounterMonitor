@@ -11,6 +11,7 @@ Release
 Release64
 Backup
 Intel_SSA
+.vs
 My Inspector XE Results - pcm
 .gitignore
 .gitattributes
@@ -24,9 +25,9 @@ My Inspector XE Results - pcm
 .*\.htm
 .*\.bat
 .*\.strings
-.*\.sln
-.*\.suo
-.*\.sdf
 .*\.vcxproj
+.*\.sln
+.*\.sdf
 .*\.vcxproj.user
+.*\.log
 .*\.vcxproj.filters

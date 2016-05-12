@@ -55,6 +55,9 @@ int main()
                         cout << "Socket" << a << "/CPU" << i << "/L3CacheHitRatio\tfloat" << endl;
                         cout << "Socket" << a << "/CPU" << i << "/L2CacheMisses\tinteger" << endl;
                         cout << "Socket" << a << "/CPU" << i << "/L3CacheMisses\tinteger" << endl;
+			cout << "Socket" << a << "/CPU" << i << "/L3Occupancy\tfloat" <<endl;
+                        cout << "Socket" << a << "/CPU" << i << "/LocalMemoryBandwidth\tfloat" <<endl;
+                        cout << "Socket" << a << "/CPU" << i << "/RemoteMemoryBandwidth\tfloat" <<endl;
 			cout << "Socket" << a << "/CPU" << i << "/CoreC0StateResidency\tfloat" << endl;
 			cout << "Socket" << a << "/CPU" << i << "/CoreC3StateResidency\tfloat" << endl;
 			cout << "Socket" << a << "/CPU" << i << "/CoreC6StateResidency\tfloat" << endl;
@@ -71,6 +74,9 @@ int main()
                 cout << "Socket" << a << "/L3CacheHitRatio\tfloat" << endl;
                 cout << "Socket" << a << "/L2CacheMisses\tinteger" << endl;
                 cout << "Socket" << a << "/L3CacheMisses\tinteger" << endl;
+		cout << "Socket" << a << "/L3Occupancy\tfloat" << endl;
+		cout << "Socket" << a << "/LocalMemoryBandwidth\tfloat" << endl;
+		cout << "Socket" << a << "/RemoteMemoryBandwidth\tfloat" << endl;
 		cout << "Socket" << a << "/CoreC0StateResidency\tfloat" << endl;
 		cout << "Socket" << a << "/CoreC3StateResidency\tfloat" << endl;
 		cout << "Socket" << a << "/CoreC6StateResidency\tfloat" << endl;
@@ -210,6 +216,39 @@ int main()
                     }
                 }
         }
+	for (uint32 i = 0; i < counters.getNumCores(); ++i) {
+	    for (uint32 a = 0; a < counters.getNumSockets(); ++a)
+		if (a == counters.getSocketId(i)) {
+		    stringstream c;
+		    c << "Socket" << a << "/CPU" << i << "/L3Occupancy?";
+		    if (s == c.str()) {
+			cout << "L3 Cache Occupancy CPU " << i << "\t0\t\t " << endl;
+			//cout << "CPU" << i << "\tL3 Cache Occupancy\t0\t1\t " << endl;
+		    }
+		}
+	}
+        for (uint32 i = 0; i < counters.getNumCores(); ++i) {
+	    for (uint32 a = 0; a < counters.getNumSockets(); ++a)
+		 if (a == counters.getSocketId(i)) {
+		    stringstream c;
+		    c << "Socket" << a << "/CPU" << i << "/LocalMemoryBandwidth?";
+		    if (s == c.str()) {
+			cout << "Local Memory Bandwidth CPU " << i << "\t0\t\t " << endl;
+			//cout << "CPU" << i << "\tLocal Memory Bandwidth\t0\t1\t " << endl;
+		    }
+		 }
+        }
+        for (uint32 i = 0; i < counters.getNumCores(); ++i) {
+	    for (uint32 a = 0; a < counters.getNumSockets(); ++a)
+		if (a == counters.getSocketId(i)) {
+		    stringstream c;
+		    c << "Socket" << a << "/CPU" << i << "/RemoteMemoryBandwidth?";
+		    if (s == c.str()) {
+			    cout << "Remote Memory Bandwidth CPU " << i << "\t0\t\t " << endl;
+			    //cout << "CPU" << i << "\tRemote Memory Bandwidth\t0\t1\t " << endl;
+		    }
+		}
+	}
         for (uint32 i = 0; i < counters.getNumSockets(); ++i) {
             stringstream c;
             c << "Socket" << i << "/BytesReadFromMC?";
@@ -369,6 +408,30 @@ int main()
                 cout << "Socket" << i << " L3 Cache Misses\t0\t\t" << endl;
             }
         }
+        
+        for (uint32 i = 0; i < counters.getNumSockets(); ++i) {
+            stringstream c;
+            c << "Socket" << i << "/L3Occupancy";
+            if (s == c.str()) {
+                cout << "Socket" << i << " L3 Cache Occupancy\t0\t\t" << endl;
+            }
+        }
+
+	for (uint32 i = 0; i < counters.getNumSockets(); ++i) {
+            stringstream c;
+            c << "Socket" << i << "/LocalMemoryBandwidth";
+            if (s == c.str()) {
+                cout << "Socket" << i << " Local Memory Bandwidth\t0\t\t" << endl;
+            }
+        }
+
+	for (uint32 i = 0; i < counters.getNumSockets(); ++i) {
+            stringstream c;
+            c << "Socket" << i << "/RemoteMemoryBandwidth";
+            if (s == c.str()) {
+                cout << "Socket" << i << " Remote Memory Bandwidth\t0\t\t" << endl;
+            }
+        }
 
         {
             stringstream c;
@@ -517,6 +580,9 @@ int main()
 	OUTPUT_CORE_METRIC("/L3CacheHitRatio", (counters.get<double, ::getL3CacheHitRatio>(i) ) )
         OUTPUT_CORE_METRIC("/L2CacheMisses", (counters.get<uint64, ::getL2CacheMisses>(i) / 1000000) )
         OUTPUT_CORE_METRIC("/L3CacheMisses", (counters.get<uint64, ::getL3CacheMisses>(i) / 1000000) )
+	OUTPUT_CORE_METRIC("/L3Occupancy", (counters.get<uint64, ::getL3CacheOccupancy>(i) ) )
+        OUTPUT_CORE_METRIC("/LocalMemoryBandwidth", (counters.get<uint64, ::getLocalMemoryBW>(i) ) )
+        OUTPUT_CORE_METRIC("/RemoteMemoryBandwidth", (counters.get<uint64, ::getRemoteMemoryBW>(i) ) )
         OUTPUT_CORE_METRIC("/CoreC0StateResidency", (counters.get<double, ::getCoreCStateResidency>(0,i)*100.) )
         OUTPUT_CORE_METRIC("/CoreC3StateResidency", (counters.get<double, ::getCoreCStateResidency>(3,i)*100.) )
         OUTPUT_CORE_METRIC("/CoreC6StateResidency", (counters.get<double, ::getCoreCStateResidency>(6,i)*100.) )
@@ -551,6 +617,9 @@ int main()
         OUTPUT_SOCKET_METRIC("/L3CacheHitRatio", (counters.getSocket<double, ::getL3CacheHitRatio>(i) ) )
         OUTPUT_SOCKET_METRIC("/L2CacheMisses", (counters.getSocket<uint64, ::getL2CacheMisses>(i) ) )
         OUTPUT_SOCKET_METRIC("/L3CacheMisses", (counters.getSocket<uint64, ::getL3CacheMisses>(i) ) )
+	OUTPUT_SOCKET_METRIC("/L3Occupancy", (counters.getSocket<uint64, ::getL3CacheOccupancy>(i) ) )
+	OUTPUT_SOCKET_METRIC("/LocalMemoryBandwidth", (counters.getSocket<uint64, ::getLocalMemoryBW>(i) ) )
+	OUTPUT_SOCKET_METRIC("/RemoteMemoryBandwidth", (counters.getSocket<uint64, ::getRemoteMemoryBW>(i) ) )
 
         for (uint32 l = 0; l < counters.getQPILinksPerSocket(); ++l) {
             for (uint32 i = 0; i < counters.getNumSockets(); ++i) {

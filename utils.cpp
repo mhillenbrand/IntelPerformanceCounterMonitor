@@ -148,8 +148,7 @@ void sigINT_handler(int signum)
 
     // in case PCM is blocked just return and summary will be dumped in
     // calling function, if needed
-    /* FIX: exit in case of a segmentation fault */
-    if( PCM::getInstance()->isBlocked()  && signum != SIGSEGV )
+    if( PCM::getInstance()->isBlocked() )
         return;
     else
         exit_cleanup();

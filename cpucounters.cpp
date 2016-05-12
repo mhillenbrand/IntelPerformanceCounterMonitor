@@ -1,6 +1,5 @@
 /*
 Copyright (c) 2009-2014, Intel Corporation
-some parts Copyright (c) 2015 Marius Hillenbrand, Karlsruhe Institute of Technology
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
@@ -17,7 +16,6 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 //            Pat Fay
 //            Austen Ott
 //            Jim Harris (FreeBSD)
-//            Marius Hillenbrand (LLC-related code for CBoxes)
 
 /*!     \file cpucounters.cpp
         \brief The bulk of Intel PCM implementation
@@ -465,7 +463,7 @@ bool PCM::L3QOSMetricAvailable()
 bool PCM::L3CacheOccupancyMetricAvailable()
 {
 	PCM_CPUID_INFO cpuinfo;
-	if (!(QOSMetricAvailable() & L3QOSMetricAvailable()))
+	if (!(QOSMetricAvailable() && L3QOSMetricAvailable()))
 		return false;
 	pcm_cpuid(0xf,0x1,cpuinfo);
 	return (cpuinfo.reg.edx & 1)?true:false;
@@ -474,7 +472,7 @@ bool PCM::L3CacheOccupancyMetricAvailable()
 bool PCM::CoreLocalMemoryBWMetricAvailable()
 {
 	PCM_CPUID_INFO cpuinfo;
-	if (!(QOSMetricAvailable() & L3QOSMetricAvailable()))
+	if (!(QOSMetricAvailable() && L3QOSMetricAvailable()))
 			return false;
 	pcm_cpuid(0xf,0x1,cpuinfo);
 	return (cpuinfo.reg.edx & 2)?true:false;
@@ -483,7 +481,7 @@ bool PCM::CoreLocalMemoryBWMetricAvailable()
 bool PCM::CoreRemoteMemoryBWMetricAvailable()
 {
 	PCM_CPUID_INFO cpuinfo;
-	if (!(QOSMetricAvailable() & L3QOSMetricAvailable()))
+	if (!(QOSMetricAvailable() && L3QOSMetricAvailable()))
 		return false;
 	pcm_cpuid(0xf, 0x1, cpuinfo);
 	return (cpuinfo.reg.edx & 4) ? true : false;
@@ -500,6 +498,8 @@ unsigned PCM::getMaxRMID() const
 
 void PCM::initRMID()
 {
+	if (!(QOSMetricAvailable() && L3QOSMetricAvailable()))
+        return;
 	unsigned maxRMID;
 	/* Calculate maximum number of RMID supported by socket */
 	maxRMID = getMaxRMID();
@@ -594,6 +594,7 @@ void PCM::initCStateSupportTables()
         case HASWELL_2:
         case HASWELLX:
         case BDX_DE:
+        case BDX:
             PCM_CSTATE_ARRAY(pkgCStateMsr, PCM_PARAM_PROTECT({0,    0,  0x60D,  0x3F8,      0,  0,  0x3F9,  0x3FA,  0,  0,  0}) );
         case HASWELL_ULT:
         case BROADWELL:
@@ -630,6 +631,7 @@ void PCM::initCStateSupportTables()
         case HASWELL_ULT:
         case HASWELLX:
         case BDX_DE:
+        case BDX:
         case BROADWELL:
         case BROADWELL_XEON_E3:
         case ATOM_BAYTRAIL:
@@ -1038,6 +1040,7 @@ bool PCM::detectNominalFrequency()
                || cpu_model == IVYTOWN
                || cpu_model == HASWELLX
                || cpu_model == BDX_DE
+               || cpu_model == BDX
                || cpu_model == IVY_BRIDGE
                || cpu_model == HASWELL
                || cpu_model == BROADWELL
@@ -1165,6 +1168,7 @@ void PCM::initUncoreObjects()
             PCU_MSR_PMON_CTRX_ADDR[3] = JKTIVT_PCU_MSR_PMON_CTR3_ADDR;
             break;
         case BDX_DE:
+        case BDX:
         case HASWELLX:
             PCU_MSR_PMON_BOX_CTL_ADDR = HSX_PCU_MSR_PMON_BOX_CTL_ADDR;
             PCU_MSR_PMON_CTRX_ADDR[0] = HSX_PCU_MSR_PMON_CTR0_ADDR;
@@ -1350,6 +1354,7 @@ bool PCM::isCPUModelSupported(int model_)
             || model_ == IVYTOWN
             || model_ == HASWELLX
             || model_ == BDX_DE
+            || model_ == BDX
 			|| model_ == BROADWELL
             || model_ == SKL
            );
@@ -1451,17 +1456,23 @@ PCM::ErrorCode PCM::program(const PCM::ProgramMode mode_, const void * parameter
 
 #ifdef PCM_USE_PERF
     std::cerr << "Trying to use Linux perf events..." << std::endl;
-    if(PERF_COUNT_HW_MAX <= PCM_PERF_COUNT_HW_REF_CPU_CYCLES)
+    if(num_online_cores < num_cores)
+    {
+        canUsePerf = false;
+        std::cerr << "PCM does not support using Linux perf APU systems with offlined cores. Falling-back to direct PMU programming."
+              << std::endl;
+    }
+    else if(PERF_COUNT_HW_MAX <= PCM_PERF_COUNT_HW_REF_CPU_CYCLES)
     {
         canUsePerf = false;
         std::cerr << "Can not use Linux perf because your Linux kernel does not support PERF_COUNT_HW_REF_CPU_CYCLES event. Falling-back to direct PMU programming." << std::endl;
     }
-    if(EXT_CUSTOM_CORE_EVENTS == mode_ && pExtDesc && pExtDesc->fixedCfg)
+    else if(EXT_CUSTOM_CORE_EVENTS == mode_ && pExtDesc && pExtDesc->fixedCfg)
     {
         canUsePerf = false;
         std::cerr << "Can not use Linux perf because non-standard fixed counter configuration requested. Falling-back to direct PMU programming." << std::endl;
     }
-    if(EXT_CUSTOM_CORE_EVENTS == mode_ && pExtDesc && (pExtDesc->OffcoreResponseMsrValue[0] || pExtDesc->OffcoreResponseMsrValue[1]))
+    else if(EXT_CUSTOM_CORE_EVENTS == mode_ && pExtDesc && (pExtDesc->OffcoreResponseMsrValue[0] || pExtDesc->OffcoreResponseMsrValue[1]))
     {
         canUsePerf = false;
         std::cerr << "Can not use Linux perf because OffcoreResponse counter usage requested. Falling-back to direct PMU programming." << std::endl;
@@ -1624,6 +1635,7 @@ PCM::ErrorCode PCM::program(const PCM::ProgramMode mode_, const void * parameter
             || HASWELLX == cpu_model
             || BROADWELL == cpu_model
             || BDX_DE == cpu_model
+            || BDX == cpu_model
                 )
         {
             coreEventDesc[0].event_number = ARCH_LLC_MISS_EVTNR;
@@ -2270,6 +2282,8 @@ const char * PCM::getUArchCodename(int32 cpu_model_) const
             return "Haswell-EP/EN/EX";
         case BDX_DE:
             return "Broadwell-DE";
+        case BDX:
+            return "Broadwell-EP";
         case IVY_BRIDGE:
             return "Ivy Bridge";
         case HASWELL:
@@ -2347,8 +2361,8 @@ void PCM::resetPMU()
 }
 void PCM::freeRMID()
 {
-    if(!(QOSMetricAvailable()&L3QOSMetricAvailable())) {
-	return;
+    if(!(QOSMetricAvailable() && L3QOSMetricAvailable())) {
+	    return;
     }
 
 	for(int32 core = 0; core < num_cores; core ++ )
@@ -2696,6 +2710,7 @@ void BasicCounterState::readAndAggregate(std::shared_ptr<SafeMsrHandle> msr)
     case PCM::IVYTOWN:
     case PCM::HASWELLX:
     case PCM::BDX_DE:
+    case PCM::BDX:
  	case PCM::IVY_BRIDGE:
     case PCM::HASWELL:
     case PCM::BROADWELL:
@@ -2817,7 +2832,7 @@ PCM::ErrorCode PCM::programServerUncorePowerMetrics(int mc_profile, int pcu_prof
          {
              PCUCntConf[1] =  PCU_MSR_PMON_CTL_EVENT(0x60) + PCU_MSR_PMON_CTL_EDGE_DET ; // number of frequency transitions
              PCUCntConf[2] =  PCU_MSR_PMON_CTL_EVENT(0x60) ; // cycles spent changing frequency: FREQ_TRANS_CYCLES
-         } else if (HASWELLX == cpu_model || BDX_DE == cpu_model)
+         } else if (HASWELLX == cpu_model || BDX_DE == cpu_model || BDX == cpu_model)
          {
              PCUCntConf[1] =  PCU_MSR_PMON_CTL_EVENT(0x74) + PCU_MSR_PMON_CTL_EDGE_DET ; // number of frequency transitions
              PCUCntConf[2] =  PCU_MSR_PMON_CTL_EVENT(0x74) ; // cycles spent changing frequency: FREQ_TRANS_CYCLES
@@ -2833,7 +2848,7 @@ PCM::ErrorCode PCM::programServerUncorePowerMetrics(int mc_profile, int pcu_prof
          {
              PCUCntConf[2] =  PCU_MSR_PMON_CTL_EVENT(0x2B) + PCU_MSR_PMON_CTL_EDGE_DET ; // PC2 transitions
              PCUCntConf[3] =  PCU_MSR_PMON_CTL_EVENT(0x2D) + PCU_MSR_PMON_CTL_EDGE_DET ; // PC6 transitions
-         } else if (HASWELLX == cpu_model || BDX_DE == cpu_model)
+         } else if (HASWELLX == cpu_model || BDX_DE == cpu_model || BDX == cpu_model)
          {
              PCUCntConf[0] =  PCU_MSR_PMON_CTL_EVENT(0x4E)                             ; // PC1e residencys
              PCUCntConf[1] =  PCU_MSR_PMON_CTL_EVENT(0x4E) + PCU_MSR_PMON_CTL_EDGE_DET ; // PC1 transitions
@@ -2845,7 +2860,7 @@ PCM::ErrorCode PCM::programServerUncorePowerMetrics(int mc_profile, int pcu_prof
          }
          break;
      case 7:
-         if (HASWELLX == cpu_model || BDX_DE == cpu_model)
+         if (HASWELLX == cpu_model || BDX_DE == cpu_model || BDX == cpu_model)
          {
              PCUCntConf[0] =  PCU_MSR_PMON_CTL_EVENT(0x7E) ; // UFS_TRANSITIONS_PERF_P_LIMIT
              PCUCntConf[1] =  PCU_MSR_PMON_CTL_EVENT(0x7D) ; // UFS_TRANSITIONS_IO_P_LIMIT
@@ -2857,7 +2872,7 @@ PCM::ErrorCode PCM::programServerUncorePowerMetrics(int mc_profile, int pcu_prof
          }
          break;
     case 8:
-         if (HASWELLX == cpu_model || BDX_DE == cpu_model)
+         if (HASWELLX == cpu_model || BDX_DE == cpu_model || BDX == cpu_model)
          {
              PCUCntConf[0] =  PCU_MSR_PMON_CTL_EVENT(0x7C) ; // UFS_TRANSITIONS_DOWN
          } else
@@ -2883,6 +2898,7 @@ PCM::ErrorCode PCM::programServerUncorePowerMetrics(int mc_profile, int pcu_prof
             break;
         case HASWELLX:
         case BDX_DE:
+        case BDX:
             PCU_MSR_PMON_BOX_FILTER_ADDR = HSX_PCU_MSR_PMON_BOX_FILTER_ADDR;
             PCU_MSR_PMON_CTLX_ADDR[0] = HSX_PCU_MSR_PMON_CTL0_ADDR;
             PCU_MSR_PMON_CTLX_ADDR[1] = HSX_PCU_MSR_PMON_CTL1_ADDR;
@@ -3567,7 +3583,7 @@ ServerPCICFGUncore::ServerPCICFGUncore(uint32 socket_, PCM * pcm) :
         PCM_PCICFG_MC_INIT(1, 2, JKTIVT)
         PCM_PCICFG_MC_INIT(1, 3, JKTIVT)
     }
-    else if(cpu_model == PCM::HASWELLX || cpu_model == PCM::BDX_DE)
+    else if(cpu_model == PCM::HASWELLX || cpu_model == PCM::BDX_DE || cpu_model == PCM::BDX)
     {
         PCM_PCICFG_MC_INIT(0, 0, HSX)
         PCM_PCICFG_MC_INIT(0, 1, HSX)
@@ -3645,11 +3661,6 @@ ServerPCICFGUncore::ServerPCICFGUncore(uint32 socket_, PCM * pcm) :
         throw std::exception();
     }
 
-    if (imcHandles.size() < 3)
-    {
-        std::cerr << "Intel PCM: warning only " << imcHandles.size() << " memory channels detected, must be >= 3." << std::endl;
-    }
-
     if (total_sockets_ == 1) {
         /*
          * For single socket systems, do not worry at all about QPI ports.  This
@@ -3679,7 +3690,7 @@ ServerPCICFGUncore::ServerPCICFGUncore(uint32 socket_, PCM * pcm) :
         PCM_PCICFG_QPI_INIT(1, JKTIVT);
         PCM_PCICFG_QPI_INIT(2, JKTIVT);
     }
-    else if(cpu_model == PCM::HASWELLX || cpu_model == PCM::BDX_DE)
+    else if(cpu_model == PCM::HASWELLX || cpu_model == PCM::BDX_DE || cpu_model == PCM::BDX)
     {
         PCM_PCICFG_QPI_INIT(0, HSX);
         PCM_PCICFG_QPI_INIT(1, HSX);
@@ -3764,6 +3775,7 @@ void ServerPCICFGUncore::programServerUncoreMemoryMetrics(int rankA, int rankB)
         break;
       case PCM::HASWELLX:
       case PCM::BDX_DE:
+      case PCM::BDX:
         MCCntConfig[0] = MC_CH_PCI_PMON_CTL_EVENT((0xb0 + rankA)) + MC_CH_PCI_PMON_CTL_UMASK(16); // RD_CAS_RANK(rankA) all banks
         MCCntConfig[1] = MC_CH_PCI_PMON_CTL_EVENT((0xb8 + rankA)) + MC_CH_PCI_PMON_CTL_UMASK(16); // WR_CAS_RANK(rankA) all banks
         MCCntConfig[2] = MC_CH_PCI_PMON_CTL_EVENT((0xb0 + rankB)) + MC_CH_PCI_PMON_CTL_UMASK(16); // RD_CAS_RANK(rankB) all banks
@@ -4197,7 +4209,7 @@ uint64 ServerPCICFGUncore::computeQPISpeed(const uint32 core_nr, const int cpumo
                uint64 endClocks = getQPIClocks((uint32)i);
 
                qpi_speed[i] = ((std::max)((endClocks - startClocks) * 16ULL * timerGranularity / (endTSC - startTSC),0ULL));
-               if(cpumodel == PCM::HASWELLX || cpumodel == PCM::BDX_DE) /* XXX:BDX_DE does not have QPI. */{
+               if(cpumodel == PCM::HASWELLX || cpumodel == PCM::BDX) /* BDX_DE does not have QPI. */{
                   qpi_speed[i] /=2; // HSX runs QPI clocks with doubled speed
                }
            }
@@ -4234,7 +4246,7 @@ uint64 PCM::CX_MSR_PMON_CTRY(uint32 Cbo, uint32 Ctr) const
     {
         return JKT_C0_MSR_PMON_CTR0 + ((JKTIVT_CBO_MSR_STEP)*Cbo) + Ctr;
 
-    } else if(HASWELLX == cpu_model || BDX_DE == cpu_model)
+    } else if(HASWELLX == cpu_model || BDX_DE == cpu_model || BDX == cpu_model)
     {
         return HSX_C0_MSR_PMON_CTR0 + ((HSX_CBO_MSR_STEP)*Cbo) + Ctr;
     }
@@ -4247,7 +4259,7 @@ uint64 PCM::CX_MSR_PMON_BOX_FILTER(uint32 Cbo) const
     {
         return JKT_C0_MSR_PMON_BOX_FILTER + ((JKTIVT_CBO_MSR_STEP)*Cbo);
 
-    } else if(HASWELLX == cpu_model || BDX_DE == cpu_model)
+    } else if (HASWELLX == cpu_model || BDX_DE == cpu_model || BDX == cpu_model)
     {
         return HSX_C0_MSR_PMON_BOX_FILTER + ((HSX_CBO_MSR_STEP)*Cbo);
     }
@@ -4261,7 +4273,7 @@ uint64 PCM::CX_MSR_PMON_BOX_FILTER1(uint32 Cbo) const
     {
         return IVT_C0_MSR_PMON_BOX_FILTER1 + ((JKTIVT_CBO_MSR_STEP)*Cbo);
 
-    } else if(HASWELLX == cpu_model || BDX_DE == cpu_model)
+    } else if (HASWELLX == cpu_model || BDX_DE == cpu_model || BDX == cpu_model)
     {
         return HSX_C0_MSR_PMON_BOX_FILTER1 + ((HSX_CBO_MSR_STEP)*Cbo);
     }
@@ -4274,7 +4286,7 @@ uint64 PCM::CX_MSR_PMON_CTLY(uint32 Cbo, uint32 Ctl) const
     {
         return JKT_C0_MSR_PMON_CTL0 + ((JKTIVT_CBO_MSR_STEP)*Cbo) + Ctl;
 
-    } else if(HASWELLX == cpu_model || BDX_DE == cpu_model)
+    } else if (HASWELLX == cpu_model || BDX_DE == cpu_model || BDX == cpu_model)
     {
         return HSX_C0_MSR_PMON_CTL0 + ((HSX_CBO_MSR_STEP)*Cbo) + Ctl;
     }
@@ -4287,7 +4299,7 @@ uint64 PCM::CX_MSR_PMON_BOX_CTL(uint32 Cbo) const
     {
         return JKT_C0_MSR_PMON_BOX_CTL + ((JKTIVT_CBO_MSR_STEP)*Cbo);
 
-    } else if(HASWELLX == cpu_model || BDX_DE == cpu_model)
+    } else if (HASWELLX == cpu_model || BDX_DE == cpu_model || BDX == cpu_model)
     {
         return HSX_C0_MSR_PMON_BOX_CTL + ((HSX_CBO_MSR_STEP)*Cbo);
     }
@@ -4314,37 +4326,18 @@ void PCM::programCboOpcodeFilter(const uint32 opc, const uint32 cbo, std::shared
     {
         msr->write(CX_MSR_PMON_BOX_FILTER(cbo), JKT_CBO_MSR_PMON_BOX_FILTER_OPC(opc));
 
-    } else if(IVYTOWN == cpu_model || HASWELLX == cpu_model || BDX_DE == cpu_model)
+    } else if(IVYTOWN == cpu_model || HASWELLX == cpu_model || BDX_DE == cpu_model || BDX == cpu_model)
     {
         msr->write(CX_MSR_PMON_BOX_FILTER1(cbo), IVTHSX_CBO_MSR_PMON_BOX_FILTER1_OPC(opc));
     }
 }
 
-void PCM::programCboFilter0(const uint32 state, const int32 filterCoreId, const int32 filterThreadId, const uint32 cbo, std::shared_ptr<SafeMsrHandle> msr)
-{
-    uint32 tid = 0;
-
-    if(filterCoreId != -1 && filterThreadId != -1) {
-	tid = ( ((filterCoreId & 0xf) << 1) | (filterThreadId & 0x1) );
-    }
-
-    if(JAKETOWN == cpu_model || IVYTOWN == cpu_model)
-    {
-	// erm, I do not know, do not care.
-
-    } else if(HASWELLX == cpu_model)
-    {
-        msr->write(CX_MSR_PMON_BOX_FILTER(cbo), HSX_CBO_MSR_PMON_BOX_FILTER_STATE(state) | tid);
-    }
-}
-
-
-void PCM::programPCIeMissCounters(const PCM::CBoxOpcode event_, const uint32 tid_)
+void PCM::programPCIeMissCounters(const PCM::PCIeEventCode event_, const uint32 tid_)
 {
     programPCIeCounters(event_,tid_,1);
 }
 
-void PCM::programPCIeCounters(const PCM::CBoxOpcode event_, const uint32 tid_, const uint32 miss_)
+void PCM::programPCIeCounters(const PCM::PCIeEventCode event_, const uint32 tid_, const uint32 miss_)
 {
     for (int32 i = 0; (i < num_sockets) && MSR.size(); ++i)
     {
@@ -4370,7 +4363,7 @@ void PCM::programPCIeCounters(const PCM::CBoxOpcode event_, const uint32 tid_, c
 
             programCboOpcodeFilter((uint32)event_, cbo, MSR[refCore]);
 
-            if((HASWELLX == cpu_model || BDX_DE == cpu_model) && tid_ != 0)
+            if((HASWELLX == cpu_model || BDX_DE == cpu_model || BDX == cpu_model) && tid_ != 0)
                 MSR[refCore]->write(CX_MSR_PMON_BOX_FILTER(cbo), tid_);
 
             MSR[refCore]->write(CX_MSR_PMON_CTLY(cbo, 0), CBO_MSR_PMON_CTL_EN);
@@ -4384,124 +4377,6 @@ void PCM::programPCIeCounters(const PCM::CBoxOpcode event_, const uint32 tid_, c
             MSR[refCore]->write(CX_MSR_PMON_BOX_CTL(cbo), CBO_MSR_PMON_BOX_CTL_FRZ_EN);
         }
     }
-}
-
-// programLLCCounters
-void PCM::programLLCCounters(LLCRequestType requestType, CBoxOpcode opcode, int filterCoreId, int filterThreadId)
-{
-
-    // minimal attempt at docs:
-    //   * there are two filter config registers per CBox, which allow
-    //     filtering events for cache line state, opcode of a request,
-    //     and originating core/thread id and node id.
-    //  * the event configuration specifies which filters are active.
-    //    The LLC_LOOKUP event uses cache line state but not request
-    //    opcode, the TOR_INSERT filters for opcode, but not cache line
-    //    state.
-    //
-    // Here we use counter 0 for the LLC_LOOKUP event and
-    // counter 1 for the TOR_INSERT event for tracking incoming
-    // requests.
-    //
-    // We optionally filter LLC_LOOKUPs for cache line state and
-    // TOR_INSERTs for opcode (and request type). In both cases, the
-    // Any/AnyOp pseudo-filter causes all events to be counted.
-    //
-    // Further, we allow to filter events for the originating core and
-    // thread.
-    // tid field in FILTER0:
-    //   * bit 5: non-thread related data
-    //   * bits 4:1 core-id
-    //   * bit 0: thread id on the core
-    //     (someone does not like SMT beyond 2-thread HT?!)
-    // tid_en field in the counter config registers (bit 19)
-
-    // TODO move this documentation somewhere else
-
-    for (int32 i = 0; i < num_sockets; ++i)
-    {
-        uint32 refCore = socketRefCore[i];
-        TemporalThreadAffinity tempThreadAffinity(refCore); // speedup trick for Linux
-
-	uint32 tid_en = 0;
-
-	if(filterCoreId != -1 && filterThreadId != -1)
-	    tid_en = CBO_MSR_PMON_CTL_TID_EN;
-
-        for(uint32 cbo = 0; cbo < getMaxNumOfCBoxes(); ++cbo)
-        {
-            // freeze enable
-            MSR[refCore]->write(CX_MSR_PMON_BOX_CTL(cbo), CBO_MSR_PMON_BOX_CTL_FRZ_EN);
-            // freeze
-            MSR[refCore]->write(CX_MSR_PMON_BOX_CTL(cbo), CBO_MSR_PMON_BOX_CTL_FRZ_EN + CBO_MSR_PMON_BOX_CTL_FRZ);
-
-#ifdef PCM_UNCORE_PMON_BOX_CHECK_STATUS
-            uint64 val = 0;
-            MSR[refCore]->read(CX_MSR_PMON_BOX_CTL(cbo), &val);
-            if ((val & UNCORE_PMON_BOX_CTL_VALID_BITS_MASK) != (CBO_MSR_PMON_BOX_CTL_FRZ_EN + CBO_MSR_PMON_BOX_CTL_FRZ))
-            {
-                std::cerr << "ERROR: CBO counter programming seems not to work. ";
-                std::cerr << "C" << std::dec << cbo << "_MSR_PMON_BOX_CTL=0x" << std::hex << val << std::endl;
-            }
-#endif
-	    // program filter 0, state to 0x1F
-	    programCboFilter0(0x1F, filterCoreId, filterThreadId, cbo, MSR[refCore]);
-
-            MSR[refCore]->write(CX_MSR_PMON_CTLY(cbo, 0), CBO_MSR_PMON_CTL_EN);
-            // LLC_Lookup event, capture any request
-            MSR[refCore]->write(CX_MSR_PMON_CTLY(cbo, 0), \
-		    CBO_MSR_PMON_CTL_EN | CBO_MSR_PMON_CTL_EVENT(0x34) \
-		    | (CBO_MSR_PMON_CTL_UMASK(requestType)) | tid_en);
-
-
-            MSR[refCore]->write(CX_MSR_PMON_CTLY(cbo, 1), CBO_MSR_PMON_CTL_EN);
-	    // program counter 1 for TOR_INSERTS
-	    // umask: all requests
-	    uint64 umask;
-	    switch(opcode) {
-		case AnyOp: umask = 0x08; break;
-		case WB:    umask = 0x10; break;
-		default:    umask = 0x01; // filtered by opcode
-			    // program filter 1, opcode
-			    programCboOpcodeFilter(opcode, cbo, MSR[refCore]);
-			    break;
-	    }
-
-	    // TODO change umask for filtering for opcodes
-	    MSR[refCore]->write(CX_MSR_PMON_CTLY(cbo, 1), \
-		    CBO_MSR_PMON_CTL_EN | CBO_MSR_PMON_CTL_EVENT(0x35) \
-		    | CBO_MSR_PMON_CTL_UMASK(umask) | tid_en );
-
-            // reset counter values
-            MSR[refCore]->write(CX_MSR_PMON_BOX_CTL(cbo), CBO_MSR_PMON_BOX_CTL_FRZ_EN + CBO_MSR_PMON_BOX_CTL_FRZ + CBO_MSR_PMON_BOX_CTL_RST_COUNTERS);
-
-            // unfreeze counters
-            MSR[refCore]->write(CX_MSR_PMON_BOX_CTL(cbo), CBO_MSR_PMON_BOX_CTL_FRZ_EN);
-        }
-    }
-}
-
-LLCCounterState PCM::getLLCCounterState(const uint32 socket_)
-{
-    uint32 refCore = socketRefCore[socket_];
-    TemporalThreadAffinity tempThreadAffinity(refCore); // speedup trick for Linux
-
-    uint32 cbo;
-
-    LLCCounterState res;
-
-    for(cbo=0; cbo < getMaxNumOfCBoxes() && cbo < 18; ++cbo)
-    {
-        uint64 ctrVal = 0;
-	// get number of LLC lookups from first counter
-        MSR[refCore]->read(CX_MSR_PMON_CTRY(cbo, 0), &ctrVal);
-        res.lookups[cbo] = ctrVal;
-	// get number of requests from second counter
-        MSR[refCore]->read(CX_MSR_PMON_CTRY(cbo, 1), &ctrVal);
-        res.requests[cbo] = ctrVal;
-    }
-
-    return res;
 }
 
 PCIeCounterState PCM::getPCIeCounterState(const uint32 socket_)
@@ -4519,48 +4394,3 @@ PCIeCounterState PCM::getPCIeCounterState(const uint32 socket_)
     }
     return result;
 }
-
-std::ostream& operator<<(std::ostream& out, const PCM::CBoxOpcode opc) {
-	const char * str = 0;
-#define STR_CASE(v) case(PCM::v): str = #v; break;
-	switch(opc) {
-	    STR_CASE(PCIeRdCur);
-	    STR_CASE(PCIeNSRd);
-	    STR_CASE(PCIeWiLF);
-	    STR_CASE(PCIeItoM);
-	    STR_CASE(PCIeNSWr);
-	    STR_CASE(PCIeNSWrF);
-	    STR_CASE(RFO);
-	    STR_CASE(CRd);
-	    STR_CASE(DRd);
-	    STR_CASE(PRd);
-	    STR_CASE(WCiLF);
-	    STR_CASE(WCiL);
-	    STR_CASE(WiL);
-	    STR_CASE(WbMtoI);
-	    STR_CASE(WbMtoE);
-	    STR_CASE(ItoM);
-	    case PCM::AnyOp: str = "Any"; break;
-	    STR_CASE(WB);
-	}
-	out << str;
-	return out;
-    }
-#undef STR_CASE
-
-std::ostream& operator<<(std::ostream& out, const PCM::LLCRequestType type) {
-	const char * str = 0;
-#define STR_CASE(v) case(PCM::v): str = #v; break;
-	switch(type) {
-	    STR_CASE(DataRead);
-	    STR_CASE(Write);
-	    STR_CASE(RemoteSnoop);
-	    STR_CASE(Any);
-	    STR_CASE(Read);
-	    STR_CASE(Nid);
-	}
-	out << str;
-	return out;
-    }
-#undef STR_CASE
-
